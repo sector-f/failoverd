@@ -2,10 +2,7 @@ module github.com/sector-f/failover
 
 go 1.19
 
-require (
-	github.com/go-ping/ping v1.1.0
-	github.com/prometheus-community/pro-bing v0.1.0
-)
+require github.com/prometheus-community/pro-bing v0.1.0
 
 require (
 	github.com/google/uuid v1.3.0 // indirect
