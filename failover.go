@@ -11,72 +11,63 @@ import (
 )
 
 type Failover struct {
-	probes []Probe
+	probes []probe
 	mu     sync.Mutex
 }
 
 func NewFailover() *Failover {
 	// Placeholder values
-	probes := []Probe{
+	probes := []probe{
+		{
+			Dst: "192.168.0.1",
+		},
 		{
 			Dst: "192.168.0.2",
 		},
+		{
+			Dst: "192.168.0.3",
+		},
 	}
 
-	probeStats := make(map[string]*StatTracker)
+	statTracker := make(map[string]*rb.RingBuffer) // Map destination address to ring buffer
 	for _, probe := range probes {
-		probeStats[probe.Dst] = &StatTracker{
-			buffer: rb.New(10), // TODO: make value configurable
-		}
+		statTracker[probe.Dst] = rb.New(10) // TODO: make value configurable
 	}
 
-	statCh := make(chan ProbeStats)
+	statCh := make(chan probeStats)
 
 	// TOOD: This should be in a "Run" function (or similar)
 	for _, probe := range probes {
-		pinger, err := probing.NewPinger(probe.Dst)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		pinger.SetPrivileged(true)
-
-		go func(p *probing.Pinger, src, dst string) {
-			go p.Run()
-			ticker := time.NewTicker(1 * time.Second) // TODO: make configurable
+		go func(src, dst string) {
 			for {
-				select {
-				case <-ticker.C:
-					tracker := probeStats[dst]
-					stats := p.Statistics()
-
-					lastSeenSent := tracker.lastSeenSent
-					lastSeenRcvd := tracker.lastSeenRcvd
-					sent := stats.PacketsSent - lastSeenSent
-					rcvd := stats.PacketsRecv - lastSeenRcvd
-
-					var loss float64
-					if sent > 0 {
-						loss = float64(sent-rcvd) / float64(sent) * 100
-					}
-
-					tracker.lastSeenSent = stats.PacketsSent
-					tracker.lastSeenRcvd = stats.PacketsRecv
-
-					statCh <- ProbeStats{
-						Src:  src,
-						Dst:  dst,
-						Loss: loss,
-					}
+				pinger, err := probing.NewPinger(dst)
+				if err != nil {
+					log.Println(err)
+					return
 				}
+
+				pinger.SetPrivileged(true)
+				pinger.Count = 1
+				pinger.Timeout = 1 * time.Second
+				timer := time.NewTimer(1 * time.Second)
+				pinger.Run()
+
+				statCh <- probeStats{
+					Src:  src,
+					Dst:  dst,
+					Loss: pinger.Statistics().PacketLoss,
+				}
+
+				<-timer.C
 			}
-		}(pinger, probe.Src, probe.Dst)
+		}(probe.Src, probe.Dst)
 	}
 
 	go func() {
 		for msg := range statCh {
-			statTracker := probeStats[msg.Dst]
-			statTracker.buffer.Insert(msg.Loss)
-			fmt.Printf("%.2f%%\n", statTracker.buffer.Average())
+			statTracker := statTracker[msg.Dst]
+			statTracker.Insert(msg.Loss)
+			fmt.Printf("%s: %.2f%%\n", msg.Dst, statTracker.Average())
 		}
 	}()
 
@@ -87,18 +78,12 @@ func NewFailover() *Failover {
 	return f
 }
 
-type Probe struct {
+type probe struct {
 	Src string
 	Dst string
 }
 
-type StatTracker struct {
-	lastSeenSent int
-	lastSeenRcvd int
-	buffer       *rb.RingBuffer
-}
-
-type ProbeStats struct {
+type probeStats struct {
 	Src  string
 	Dst  string
 	Loss float64
