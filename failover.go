@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
-	"github.com/sector-f/failover/internal/ping"
+	probing "github.com/prometheus-community/pro-bing"
 	rb "github.com/sector-f/failover/internal/ringbuffer"
 )
 
@@ -22,30 +23,49 @@ func NewFailover() *Failover {
 		},
 	}
 
-	probeStats := make(map[string]*rb.RingBuffer)
+	probeStats := make(map[string]*StatTracker)
 	for _, probe := range probes {
-		probeStats[probe.Dst] = rb.New(10) // TODO: make value configurable
+		probeStats[probe.Dst] = &StatTracker{
+			buffer: rb.New(10), // TODO: make value configurable
+		}
 	}
 
 	statCh := make(chan ProbeStats)
 
 	// TOOD: This should be in a "Run" function (or similar)
 	for _, probe := range probes {
-		pinger, err := ping.NewPinger(probe.Dst)
+		pinger, err := probing.NewPinger(probe.Dst)
 		if err != nil {
 			log.Fatalln(err)
 		}
 		pinger.SetPrivileged(true)
 
-		go func(p *ping.Pinger, src, dst string) {
+		go func(p *probing.Pinger, src, dst string) {
 			go p.Run()
+			ticker := time.NewTicker(1 * time.Second) // TODO: make configurable
 			for {
 				select {
-				case stats := <-p.StatsChan:
+				case <-ticker.C:
+					tracker := probeStats[dst]
+					stats := p.Statistics()
+
+					lastSeenSent := tracker.lastSeenSent
+					lastSeenRcvd := tracker.lastSeenRcvd
+					sent := stats.PacketsSent - lastSeenSent
+					rcvd := stats.PacketsRecv - lastSeenRcvd
+
+					var loss float64
+					if sent > 0 {
+						loss = float64(sent-rcvd) / float64(sent) * 100
+					}
+
+					tracker.lastSeenSent = stats.PacketsSent
+					tracker.lastSeenRcvd = stats.PacketsRecv
+
 					statCh <- ProbeStats{
 						Src:  src,
 						Dst:  dst,
-						Loss: stats.PacketLoss,
+						Loss: loss,
 					}
 				}
 			}
@@ -54,11 +74,9 @@ func NewFailover() *Failover {
 
 	go func() {
 		for msg := range statCh {
-			stats := probeStats[msg.Dst]
-			stats.Insert(msg.Loss)
-			fmt.Printf("%.2f%%\n", stats.Average())
-
-			// fmt.Printf("%s: %.2f%%\n", msg.Dst, stats.Average())
+			statTracker := probeStats[msg.Dst]
+			statTracker.buffer.Insert(msg.Loss)
+			fmt.Printf("%.2f%%\n", statTracker.buffer.Average())
 		}
 	}()
 
@@ -72,6 +90,12 @@ func NewFailover() *Failover {
 type Probe struct {
 	Src string
 	Dst string
+}
+
+type StatTracker struct {
+	lastSeenSent int
+	lastSeenRcvd int
+	buffer       *rb.RingBuffer
 }
 
 type ProbeStats struct {

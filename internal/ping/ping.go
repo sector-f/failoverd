@@ -1,5 +1,7 @@
 // Package ping implements a wrapper around the github.com/prometheus-community/pro-bing package.
-// It provides the ability to calculate packet loss while taking into account the fact that responses to a ping are not instantaneous.
+// It attempts to provide the ability to calculate packet loss while taking into account the fact that responses to a ping are not instantaneous.
+//
+// I could not get it to work. I may revist it later.
 
 package ping
 
