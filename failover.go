@@ -11,33 +11,40 @@ import (
 )
 
 type Failover struct {
-	probes []probe
-	mu     sync.Mutex
+	probes      []probe
+	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
+	statCh      chan probeStats
+	mu          sync.Mutex
 }
 
 func NewFailover() *Failover {
-	// Placeholder values
-	probes := []probe{
-		{
-			Dst: "192.168.0.1",
+	f := &Failover{
+		// Placeholder probe values
+		probes: []probe{
+			{
+				Dst: "192.168.0.1",
+			},
+			{
+				Dst: "192.168.0.2",
+			},
+			{
+				Dst: "192.168.0.3",
+			},
 		},
-		{
-			Dst: "192.168.0.2",
-		},
-		{
-			Dst: "192.168.0.3",
-		},
+		statTracker: make(map[string]*rb.RingBuffer),
+		statCh:      make(chan probeStats),
+		mu:          sync.Mutex{},
 	}
 
-	statTracker := make(map[string]*rb.RingBuffer) // Map destination address to ring buffer
-	for _, probe := range probes {
-		statTracker[probe.Dst] = rb.New(10) // TODO: make value configurable
+	for _, probe := range f.probes {
+		f.statTracker[probe.Dst] = rb.New(10) // TODO: make value configurable
 	}
 
-	statCh := make(chan probeStats)
+	return f
+}
 
-	// TOOD: This should be in a "Run" function (or similar)
-	for _, probe := range probes {
+func (f *Failover) Run() {
+	for _, probe := range f.probes {
 		go func(src, dst string) {
 			for {
 				pinger, err := probing.NewPinger(dst)
@@ -52,7 +59,7 @@ func NewFailover() *Failover {
 				timer := time.NewTimer(1 * time.Second)
 				pinger.Run()
 
-				statCh <- probeStats{
+				f.statCh <- probeStats{
 					Src:  src,
 					Dst:  dst,
 					Loss: pinger.Statistics().PacketLoss,
@@ -63,19 +70,11 @@ func NewFailover() *Failover {
 		}(probe.Src, probe.Dst)
 	}
 
-	go func() {
-		for msg := range statCh {
-			statTracker := statTracker[msg.Dst]
-			statTracker.Insert(msg.Loss)
-			fmt.Printf("%s: %.2f%%\n", msg.Dst, statTracker.Average())
-		}
-	}()
-
-	f := &Failover{
-		mu: sync.Mutex{},
+	for msg := range f.statCh {
+		statTracker := f.statTracker[msg.Dst]
+		statTracker.Insert(msg.Loss)
+		fmt.Printf("%s: %.2f%%\n", msg.Dst, statTracker.Average())
 	}
-
-	return f
 }
 
 type probe struct {
