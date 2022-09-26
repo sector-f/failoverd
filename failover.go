@@ -1,7 +1,6 @@
 package failover
 
 import (
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -11,9 +10,11 @@ import (
 )
 
 type Failover struct {
+	OnRecv func(p ProbeStats)
+
 	probes      []probe
 	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
-	statCh      chan probeStats
+	statCh      chan ProbeStats
 	mu          sync.Mutex
 }
 
@@ -32,7 +33,7 @@ func NewFailover() *Failover {
 			},
 		},
 		statTracker: make(map[string]*rb.RingBuffer),
-		statCh:      make(chan probeStats),
+		statCh:      make(chan ProbeStats),
 		mu:          sync.Mutex{},
 	}
 
@@ -59,7 +60,7 @@ func (f *Failover) Run() {
 				timer := time.NewTimer(1 * time.Second)
 				pinger.Run()
 
-				f.statCh <- probeStats{
+				f.statCh <- ProbeStats{
 					Src:  src,
 					Dst:  dst,
 					Loss: pinger.Statistics().PacketLoss,
@@ -73,7 +74,14 @@ func (f *Failover) Run() {
 	for msg := range f.statCh {
 		statTracker := f.statTracker[msg.Dst]
 		statTracker.Insert(msg.Loss)
-		fmt.Printf("%s: %.2f%%\n", msg.Dst, statTracker.Average())
+
+		if f.OnRecv != nil {
+			f.OnRecv(ProbeStats{
+				Src:  msg.Src,
+				Dst:  msg.Dst,
+				Loss: statTracker.Average(),
+			})
+		}
 	}
 }
 
@@ -82,7 +90,7 @@ type probe struct {
 	Dst string
 }
 
-type probeStats struct {
+type ProbeStats struct {
 	Src  string
 	Dst  string
 	Loss float64
