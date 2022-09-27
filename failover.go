@@ -26,20 +26,9 @@ type Failover struct {
 	mu          sync.Mutex
 }
 
-func NewFailover() *Failover {
+func NewFailover(probes []Probe, options ...Option) *Failover {
 	f := &Failover{
-		// Placeholder probe values
-		probes: []Probe{
-			{
-				Dst: "192.168.0.1",
-			},
-			{
-				Dst: "192.168.0.2",
-			},
-			{
-				Dst: "192.168.0.3",
-			},
-		},
+		probes:       probes,
 		closeChan:    make(chan struct{}),
 		isClosedChan: make(chan struct{}),
 		statTracker:  make(map[string]*rb.RingBuffer),
@@ -47,23 +36,21 @@ func NewFailover() *Failover {
 		mu:           sync.Mutex{},
 	}
 
-	if f.pingFreqency == 0 {
+	return f
+}
+
+func (f *Failover) Run() {
+	if f.pingFreqency <= 0 {
 		f.pingFreqency = 1 * time.Second
 	}
 
-	if f.numSeconds == 0 {
+	if f.numSeconds <= 0 {
 		f.numSeconds = 10
 	}
 
 	for _, probe := range f.probes {
 		f.statTracker[probe.Dst] = rb.New(f.numSeconds)
-	}
 
-	return f
-}
-
-func (f *Failover) Run() {
-	for _, probe := range f.probes {
 		go func(src, dst string) {
 			for {
 				select {
@@ -95,7 +82,7 @@ func (f *Failover) Run() {
 					//     we still want to wait the remaining 900ms before sending the next request.
 
 					// Note that we never set a timeout on the pinger itself
-					pinger.SetPrivileged(true)
+					pinger.SetPrivileged(f.privileged)
 					pinger.Count = 1
 					go func() {
 						pinger.Run() // Blocks until it has dealt with a packet
@@ -161,12 +148,6 @@ func (f *Failover) Stop() {
 }
 
 type Option func(f *Failover)
-
-func WithProbes(probes []Probe) Option {
-	return func(f *Failover) {
-		f.probes = probes
-	}
-}
 
 func WithPingFrequency(t time.Duration) Option {
 	return func(f *Failover) {
