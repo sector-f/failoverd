@@ -1,6 +1,7 @@
 package failover
 
 import (
+	"context"
 	"log"
 	"sync"
 	"time"
@@ -76,19 +77,52 @@ func (f *Failover) Run() {
 						return
 					}
 
+					// This is all working around Pinger.Run() not taking a context.
+					//
+					// The desired behavior is as follows:
+					//   * Send a ping request at a fixed period, e.g. once per second, and wait for a response.
+					//
+					//   * If we are still waiting for a response when it's time to send the next request,
+					//     then stop waiting for a response to the current request, and send the next request.
+					//
+					//   * If we _do_ get a response before it's time to send another request, then
+					//     we still want to let the full time period elapse (starting from when we sent the request).
+					//     E.g. if we are sending one request per second, and we receive a response after 100ms, then
+					//     we still want to wait the remaining 900ms before sending the next request.
+
+					// Note that we never set a timeout on the pinger itself
 					pinger.SetPrivileged(true)
 					pinger.Count = 1
-					pinger.Timeout = f.pingFreqency
-					timer := time.NewTimer(f.pingFreqency)
-					pinger.Run()
 
-					f.statCh <- ProbeStats{
-						Src:  src,
-						Dst:  dst,
-						Loss: pinger.Statistics().PacketLoss,
+					// Start running the pinger in its own goroutine; Run() blocks until it has dealt with pinger.Count packets
+					go func() {
+						pinger.Run()
+					}()
+
+					// Create a context that is canceled once we want to send the next ping
+					ctx, cancelFunc := context.WithTimeout(context.Background(), f.pingFreqency)
+
+					// At this point, three things can happen:
+					//   * We get a response to the ping request in time
+					//   * We _don't_ get a response to the ping request in time, and therefore time out
+					//   * Stop() is called, so we want to abandon the running ping
+					select {
+					case <-ctx.Done():
+						pinger.Stop()
+						f.statCh <- ProbeStats{
+							Src:  src,
+							Dst:  dst,
+							Loss: pinger.Statistics().PacketLoss,
+						}
+						break
+					case <-f.isClosedChan:
+						pinger.Stop()
+						cancelFunc()
+						return
 					}
 
-					<-timer.C
+					<-ctx.Done()
+					cancelFunc()
 				}
 			}
 		}(probe.Src, probe.Dst)
