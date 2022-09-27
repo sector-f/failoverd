@@ -16,6 +16,9 @@ type Failover struct {
 	privileged   bool
 	numSeconds   uint
 
+	closeChan    chan struct{}
+	isClosedChan chan struct{}
+
 	probes      []Probe
 	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
 	statCh      chan ProbeStats
@@ -36,9 +39,11 @@ func NewFailover() *Failover {
 				Dst: "192.168.0.3",
 			},
 		},
-		statTracker: make(map[string]*rb.RingBuffer),
-		statCh:      make(chan ProbeStats),
-		mu:          sync.Mutex{},
+		closeChan:    make(chan struct{}),
+		isClosedChan: make(chan struct{}),
+		statTracker:  make(map[string]*rb.RingBuffer),
+		statCh:       make(chan ProbeStats),
+		mu:           sync.Mutex{},
 	}
 
 	if f.pingFreqency == 0 {
@@ -60,42 +65,57 @@ func (f *Failover) Run() {
 	for _, probe := range f.probes {
 		go func(src, dst string) {
 			for {
-				// TODO: resolve DNS once at creation and then use value here
-				pinger, err := probing.NewPinger(dst)
-				if err != nil {
-					log.Println(err)
+				select {
+				case <-f.isClosedChan:
 					return
+				default:
+					// TODO: resolve DNS once at creation and then use value here
+					pinger, err := probing.NewPinger(dst)
+					if err != nil {
+						log.Println(err)
+						return
+					}
+
+					pinger.SetPrivileged(true)
+					pinger.Count = 1
+					pinger.Timeout = f.pingFreqency
+					timer := time.NewTimer(f.pingFreqency)
+					pinger.Run()
+
+					f.statCh <- ProbeStats{
+						Src:  src,
+						Dst:  dst,
+						Loss: pinger.Statistics().PacketLoss,
+					}
+
+					<-timer.C
 				}
-
-				pinger.SetPrivileged(true)
-				pinger.Count = 1
-				pinger.Timeout = f.pingFreqency
-				timer := time.NewTimer(f.pingFreqency)
-				pinger.Run()
-
-				f.statCh <- ProbeStats{
-					Src:  src,
-					Dst:  dst,
-					Loss: pinger.Statistics().PacketLoss,
-				}
-
-				<-timer.C
 			}
 		}(probe.Src, probe.Dst)
 	}
 
-	for msg := range f.statCh {
-		statTracker := f.statTracker[msg.Dst]
-		statTracker.Insert(msg.Loss)
+	for {
+		select {
+		case <-f.closeChan:
+			close(f.isClosedChan)
+			return
+		case msg := <-f.statCh:
+			statTracker := f.statTracker[msg.Dst]
+			statTracker.Insert(msg.Loss)
 
-		if f.OnRecv != nil {
-			f.OnRecv(ProbeStats{
-				Src:  msg.Src,
-				Dst:  msg.Dst,
-				Loss: statTracker.Average(),
-			})
+			if f.OnRecv != nil {
+				f.OnRecv(ProbeStats{
+					Src:  msg.Src,
+					Dst:  msg.Dst,
+					Loss: statTracker.Average(),
+				})
+			}
 		}
 	}
+}
+
+func (f *Failover) Stop() {
+	f.closeChan <- struct{}{}
 }
 
 type Option func(f *Failover)
