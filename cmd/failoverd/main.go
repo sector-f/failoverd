@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/sector-f/failover"
 )
@@ -19,7 +20,12 @@ func main() {
 		},
 	}
 
-	f := failover.NewFailover(probes, failover.WithPrivileged(true))
+	f, err := failover.NewFailover(probes, failover.WithPrivileged(true))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	f.OnRecv = func(p failover.ProbeStats) {
 		fmt.Printf("%s: %.02f\n", p.Dst, p.Loss)
 	}

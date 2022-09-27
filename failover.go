@@ -2,7 +2,9 @@ package failover
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -26,9 +28,23 @@ type Failover struct {
 	mu          sync.Mutex
 }
 
-func NewFailover(probes []Probe, options ...Option) *Failover {
+func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
+	resolvedProbes := make([]Probe, 0, len(probes))
+	for _, p := range probes {
+		addrs, err := net.LookupHost(p.Dst)
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve %s: %w", p.Dst, err)
+		}
+
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("no addresses returned for %s", p.Dst)
+		}
+
+		resolvedProbes = append(resolvedProbes, Probe{Src: p.Src, Dst: addrs[0]})
+	}
+
 	f := &Failover{
-		probes:       probes,
+		probes:       resolvedProbes,
 		closeChan:    make(chan struct{}),
 		isClosedChan: make(chan struct{}),
 		statTracker:  make(map[string]*rb.RingBuffer),
@@ -36,7 +52,7 @@ func NewFailover(probes []Probe, options ...Option) *Failover {
 		mu:           sync.Mutex{},
 	}
 
-	return f
+	return f, nil
 }
 
 func (f *Failover) Run() {
@@ -57,7 +73,6 @@ func (f *Failover) Run() {
 				case <-f.isClosedChan:
 					return
 				default:
-					// TODO: resolve DNS once at creation and then use value here
 					pinger, err := probing.NewPinger(dst)
 					if err != nil {
 						log.Println(err)
