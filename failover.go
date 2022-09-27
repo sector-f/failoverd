@@ -76,6 +76,10 @@ func (f *Failover) Run() {
 						log.Println(err)
 						return
 					}
+					finishedChan := make(chan *probing.Statistics)
+					pinger.OnFinish = func(stats *probing.Statistics) {
+						finishedChan <- stats
+					}
 
 					// This is all working around Pinger.Run() not taking a context.
 					//
@@ -93,10 +97,8 @@ func (f *Failover) Run() {
 					// Note that we never set a timeout on the pinger itself
 					pinger.SetPrivileged(true)
 					pinger.Count = 1
-
-					// Start running the pinger in its own goroutine; Run() blocks until it has dealt with pinger.Count packets
 					go func() {
-						pinger.Run()
+						pinger.Run() // Blocks until it has dealt with a packet
 					}()
 
 					// Create a context that is canceled once we want to send the next ping
@@ -107,14 +109,20 @@ func (f *Failover) Run() {
 					//   * We _don't_ get a response to the ping request in time, and therefore time out
 					//   * Stop() is called, so we want to abandon the running ping
 					select {
+					case stats := <-finishedChan:
+						f.statCh <- ProbeStats{
+							Src:  src,
+							Dst:  dst,
+							Loss: stats.PacketLoss,
+						}
 					case <-ctx.Done():
+						// Timed out
 						pinger.Stop()
 						f.statCh <- ProbeStats{
 							Src:  src,
 							Dst:  dst,
-							Loss: pinger.Statistics().PacketLoss,
+							Loss: 100.0, // We're only sending one ping at a time, so a timeout means 100% packet loss
 						}
-						break
 					case <-f.isClosedChan:
 						pinger.Stop()
 						cancelFunc()
