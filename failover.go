@@ -44,12 +44,14 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 	}
 
 	f := &Failover{
-		probes:       resolvedProbes,
+		probes: resolvedProbes,
+
 		closeChan:    make(chan struct{}),
 		isClosedChan: make(chan struct{}),
-		statTracker:  make(map[string]*rb.RingBuffer),
-		statCh:       make(chan ProbeStats),
-		mu:           sync.Mutex{},
+
+		statTracker: make(map[string]*rb.RingBuffer),
+		statCh:      make(chan ProbeStats),
+		mu:          sync.Mutex{},
 	}
 
 	return f, nil
@@ -140,10 +142,9 @@ func (f *Failover) Run() {
 
 	for {
 		select {
-		case <-f.closeChan:
-			close(f.isClosedChan)
-			return
 		case msg := <-f.statCh:
+			f.mu.Lock()
+
 			statTracker := f.statTracker[msg.Dst]
 			statTracker.Insert(msg.Loss)
 
@@ -154,8 +155,30 @@ func (f *Failover) Run() {
 					Loss: statTracker.Average(),
 				})
 			}
+
+			f.mu.Unlock()
+		case <-f.closeChan:
+			close(f.isClosedChan)
+			return
+		}
+
+	}
+}
+
+func (f *Failover) Stats() map[string]ProbeStats {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	m := make(map[string]ProbeStats)
+	for _, probe := range f.probes {
+		m[probe.Dst] = ProbeStats{
+			Src:  probe.Src,
+			Dst:  probe.Dst,
+			Loss: f.statTracker[probe.Dst].Average(),
 		}
 	}
+
+	return m
 }
 
 func (f *Failover) Stop() {

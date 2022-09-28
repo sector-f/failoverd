@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/sector-f/failover"
 )
@@ -18,6 +19,9 @@ func main() {
 		{
 			Dst: "192.168.0.3",
 		},
+		{
+			Dst: "google.com",
+		},
 	}
 
 	f, err := failover.NewFailover(probes, failover.WithPrivileged(true))
@@ -26,9 +30,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	f.OnRecv = func(p failover.ProbeStats) {
-		fmt.Printf("%s: %.02f\n", p.Dst, p.Loss)
-	}
+	go f.Run()
 
-	f.Run()
+	ticker := time.NewTicker(5 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			statMap := f.Stats()
+			for _, p := range probes {
+				stats := statMap[p.Dst]
+				fmt.Printf("%s: %.02f\n", stats.Dst, stats.Loss)
+			}
+		}
+	}
 }
