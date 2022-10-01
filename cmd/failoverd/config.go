@@ -15,6 +15,7 @@ type config struct {
 	NumSeconds      uint
 	Probes          []failover.Probe
 
+	OnRecvFunc   lua.LValue
 	OnUpdateFunc lua.LValue
 	OnQuitFunc   lua.LValue
 }
@@ -72,6 +73,13 @@ func configFromLua(l *lua.LState) (config, error) {
 		c.Probes = p
 	default:
 		return c, fmt.Errorf("`probes` must be a table, not a %s", probes.Type())
+	}
+
+	switch onRecvFunc := l.GetGlobal("on_recv").(type) {
+	case *lua.LFunction, *lua.LNilType:
+		c.OnRecvFunc = onRecvFunc
+	default:
+		return c, fmt.Errorf("`on_recv` must be a function, not a %s", onRecvFunc.Type())
 	}
 
 	switch onUpdateFunc := l.GetGlobal("on_update").(type) {

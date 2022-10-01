@@ -24,6 +24,7 @@ func main() {
 	}
 
 	registerProbeStatsType(luaState)
+	registerGlobalProbeStatsType(luaState)
 
 	probes := config.Probes
 
@@ -32,29 +33,39 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+
+	f.OnRecv = func(gps failover.GlobalProbeStats) {
+		ud := &lua.LUserData{
+			Value:     gps,
+			Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
+		}
+
+		if config.OnRecvFunc.Type() != lua.LTNil {
+			err := luaState.CallByParam(
+				lua.P{
+					Fn:      config.OnRecvFunc,
+					NRet:    0,
+					Protect: true,
+				},
+				ud,
+			)
+
+			if err != nil {
+				log.Printf("Error calling on_recv function: %v\n", err)
+			}
+		}
+	}
+
 	go f.Run()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 
 	ticker := time.NewTicker(config.UpdateFrequency)
-	var lowestProbeStats failover.ProbeStats
 	for {
 		select {
 		case <-ticker.C:
-			statMap := f.Stats()
-			for i, p := range probes {
-				stats := statMap[p.Dst]
-
-				if i == 0 {
-					lowestProbeStats = stats
-					continue
-				}
-
-				if stats.Loss < lowestProbeStats.Loss {
-					lowestProbeStats = stats
-				}
-			}
+			lowestProbeStats := f.Stats().LowestLoss()
 
 			ud := &lua.LUserData{
 				Value:     &lowestProbeStats,

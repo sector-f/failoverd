@@ -13,7 +13,7 @@ import (
 )
 
 type Failover struct {
-	OnRecv func(p ProbeStats)
+	OnRecv func(gps GlobalProbeStats)
 
 	pingFreqency time.Duration
 	privileged   bool
@@ -21,6 +21,9 @@ type Failover struct {
 
 	closeChan    chan struct{}
 	isClosedChan chan struct{}
+
+	globalStats     GlobalProbeStats
+	globalStatsChan chan GlobalProbeStats
 
 	probes      []Probe
 	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
@@ -48,6 +51,9 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 
 		closeChan:    make(chan struct{}),
 		isClosedChan: make(chan struct{}),
+
+		globalStats:     GlobalProbeStats{make(map[string]ProbeStats), resolvedProbes},
+		globalStatsChan: make(chan GlobalProbeStats),
 
 		statTracker: make(map[string]*rb.RingBuffer),
 		statCh:      make(chan ProbeStats),
@@ -142,18 +148,23 @@ func (f *Failover) Run() {
 
 	for {
 		select {
+		case f.globalStatsChan <- f.globalStats:
 		case msg := <-f.statCh:
 			f.mu.Lock()
 
 			statTracker := f.statTracker[msg.Dst]
 			statTracker.Insert(msg.Loss)
 
+			stats := ProbeStats{
+				Src:  msg.Src,
+				Dst:  msg.Dst,
+				Loss: statTracker.Average(),
+			}
+
+			f.globalStats.Stats[msg.Dst] = stats
+
 			if f.OnRecv != nil {
-				f.OnRecv(ProbeStats{
-					Src:  msg.Src,
-					Dst:  msg.Dst,
-					Loss: statTracker.Average(),
-				})
+				f.OnRecv(f.globalStats)
 			}
 
 			f.mu.Unlock()
@@ -165,20 +176,8 @@ func (f *Failover) Run() {
 	}
 }
 
-func (f *Failover) Stats() map[string]ProbeStats {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	m := make(map[string]ProbeStats)
-	for _, probe := range f.probes {
-		m[probe.Dst] = ProbeStats{
-			Src:  probe.Src,
-			Dst:  probe.Dst,
-			Loss: f.statTracker[probe.Dst].Average(),
-		}
-	}
-
-	return m
+func (f *Failover) Stats() GlobalProbeStats {
+	return <-f.globalStatsChan
 }
 
 func (f *Failover) Stop() {
@@ -203,6 +202,31 @@ func WithNumSeconds(n uint) Option {
 	return func(f *Failover) {
 		f.numSeconds = n
 	}
+}
+
+type GlobalProbeStats struct {
+	Stats map[string]ProbeStats
+
+	probes []Probe
+}
+
+func (gps GlobalProbeStats) LowestLoss() ProbeStats {
+	var lowestProbeStats ProbeStats
+
+	for i, p := range gps.probes {
+		stats := gps.Stats[p.Dst]
+
+		if i == 0 {
+			lowestProbeStats = stats
+			continue
+		}
+
+		if stats.Loss < lowestProbeStats.Loss {
+			lowestProbeStats = stats
+		}
+	}
+
+	return lowestProbeStats
 }
 
 type Probe struct {
