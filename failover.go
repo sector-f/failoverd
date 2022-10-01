@@ -41,15 +41,15 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 	for _, p := range probes {
 		// If specified source is not an address, treat it as a network interface name
 		// and attempt to determine its address using netlink.
-		if net.ParseIP(p.Src) == nil {
+		if p.Src != "" && net.ParseIP(p.Src) == nil {
 			link, err := netlink.LinkByName(p.Src)
 			if err != nil {
-				return nil, fmt.Errorf("could not determine address: %w", err)
+				return nil, fmt.Errorf("could not determine address of %s: %w", p.Src, err)
 			}
 
-			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
+			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4) // TODO: Handle IPv6?
 			if err != nil {
-				return nil, fmt.Errorf("could not determine address: %w", err)
+				return nil, fmt.Errorf("could not determine address of %s: %w", p.Src, err)
 			}
 
 			if len(addrs) == 0 {
