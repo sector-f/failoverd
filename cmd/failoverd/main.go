@@ -65,11 +65,11 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			lowestProbeStats := f.Stats().LowestLoss()
+			stats := f.Stats()
 
 			ud := &lua.LUserData{
-				Value:     &lowestProbeStats,
-				Metatable: luaState.GetTypeMetatable(luaProbeStatsTypeName),
+				Value:     stats,
+				Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
 			}
 
 			if config.OnUpdateFunc.Type() != lua.LTNil {

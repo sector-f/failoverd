@@ -16,6 +16,7 @@ func registerGlobalProbeStatsType(l *lua.LState) {
 
 	methods := map[string]lua.LGFunction{
 		"lowest_loss": globalProbeStatsLowestLoss,
+		"get":         globalProbeStatsGet,
 	}
 
 	l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), methods))
@@ -28,6 +29,19 @@ func checkGlobalProbeStats(l *lua.LState) failover.GlobalProbeStats {
 	}
 	l.ArgError(1, "global_probe_stats expected")
 	return failover.GlobalProbeStats{}
+}
+
+func globalProbeStatsGet(l *lua.LState) int {
+	p := checkGlobalProbeStats(l)
+	dst := l.CheckString(2)
+	stats := p.Get(dst)
+
+	l.Push(&lua.LUserData{
+		Value:     &stats,
+		Metatable: l.GetTypeMetatable(luaProbeStatsTypeName),
+	})
+
+	return 1
 }
 
 func globalProbeStatsLowestLoss(l *lua.LState) int {
