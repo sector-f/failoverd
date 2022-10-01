@@ -7,22 +7,26 @@ import (
 	"time"
 
 	"github.com/sector-f/failover"
+	lua "github.com/yuin/gopher-lua"
 )
 
 func main() {
-	probes := []failover.Probe{
-		{
-			Dst: "192.168.0.1",
-		},
-		{
-			Dst: "192.168.0.2",
-		},
-		{
-			Dst: "192.168.0.3",
-		},
+	luaState := lua.NewState()
+	defer luaState.Close()
+
+	configFilename := "config.lua" // TODO: make configurable
+	luaState.DoFile(configFilename)
+	config, err := configFromLua(luaState)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
+		os.Exit(1)
 	}
 
-	f, err := failover.NewFailover(probes, failover.WithPrivileged(true))
+	registerProbeStatsType(luaState)
+
+	probes := config.Probes
+
+	f, err := failover.NewFailover(probes, failover.WithPrivileged(config.Privileged))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -30,30 +34,42 @@ func main() {
 
 	go f.Run()
 
-	var (
-		lowestDst  string
-		lowestLoss float64
-	)
-
+	ticker := time.NewTicker(config.UpdateFrequency)
+	var lowestProbeStats failover.ProbeStats
 	for {
-		time.Sleep(10 * time.Second)
+		select {
+		case <-ticker.C:
+			statMap := f.Stats()
+			for i, p := range probes {
+				stats := statMap[p.Dst]
 
-		statMap := f.Stats()
-		for i, p := range probes {
-			stats := statMap[p.Dst]
+				if i == 0 {
+					lowestProbeStats = stats
+					continue
+				}
 
-			if i == 0 {
-				lowestDst = stats.Dst
-				lowestLoss = stats.Loss
-				continue
+				if stats.Loss < lowestProbeStats.Loss {
+					lowestProbeStats = stats
+				}
 			}
 
-			if stats.Loss < lowestLoss {
-				lowestDst = stats.Dst
-				lowestLoss = stats.Loss
+			ud := &lua.LUserData{
+				Value:     &lowestProbeStats,
+				Metatable: luaState.GetTypeMetatable(luaProbeStatsTypeName),
+			}
+
+			err := luaState.CallByParam(
+				lua.P{
+					Fn:      config.OnUpdateFunc, // I suppose this name could be hardcoded in?
+					NRet:    0,
+					Protect: true,
+				},
+				ud,
+			)
+
+			if err != nil {
+				log.Printf("Error calling on_update function: %v\n", err)
 			}
 		}
-
-		log.Printf("%s: %.02f%%\n", lowestDst, lowestLoss)
 	}
 }
