@@ -25,7 +25,9 @@ type Failover struct {
 	globalStats     GlobalProbeStats
 	globalStatsChan chan GlobalProbeStats
 
-	probes      []Probe
+	probes     []Probe
+	resolveMap map[string]string // Maps client-specified destinations to resolved destinations
+
 	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
 	statCh      chan ProbeStats
 	mu          sync.Mutex
@@ -33,6 +35,8 @@ type Failover struct {
 
 func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 	resolvedProbes := make([]Probe, 0, len(probes))
+	resolveMap := make(map[string]string)
+
 	for _, p := range probes {
 		addrs, err := net.LookupHost(p.Dst)
 		if err != nil {
@@ -44,6 +48,14 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 		}
 
 		resolvedProbes = append(resolvedProbes, Probe{Src: p.Src, Dst: addrs[0]})
+		resolveMap[p.Dst] = addrs[0]
+	}
+
+	gps := GlobalProbeStats{
+		Stats: make(map[string]ProbeStats),
+
+		probes:     resolvedProbes,
+		resolveMap: resolveMap,
 	}
 
 	f := &Failover{
@@ -52,7 +64,7 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 		closeChan:    make(chan struct{}),
 		isClosedChan: make(chan struct{}),
 
-		globalStats:     GlobalProbeStats{make(map[string]ProbeStats), resolvedProbes},
+		globalStats:     gps,
 		globalStatsChan: make(chan GlobalProbeStats),
 
 		statTracker: make(map[string]*rb.RingBuffer),
@@ -172,7 +184,6 @@ func (f *Failover) Run() {
 			close(f.isClosedChan)
 			return
 		}
-
 	}
 }
 
@@ -207,7 +218,12 @@ func WithNumSeconds(n uint) Option {
 type GlobalProbeStats struct {
 	Stats map[string]ProbeStats
 
-	probes []Probe
+	probes     []Probe
+	resolveMap map[string]string
+}
+
+func (gps GlobalProbeStats) Get(dst string) ProbeStats {
+	return gps.Stats[gps.resolveMap[dst]]
 }
 
 func (gps GlobalProbeStats) LowestLoss() ProbeStats {
