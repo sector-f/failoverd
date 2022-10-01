@@ -10,6 +10,7 @@ import (
 
 	probing "github.com/prometheus-community/pro-bing"
 	rb "github.com/sector-f/failover/internal/ringbuffer"
+	"github.com/vishvananda/netlink"
 )
 
 type Failover struct {
@@ -38,6 +39,26 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 	resolveMap := make(map[string]string)
 
 	for _, p := range probes {
+		// If specified source is not an address, treat it as a network interface name
+		// and attempt to determine its address using netlink.
+		if net.ParseIP(p.Src) == nil {
+			link, err := netlink.LinkByName(p.Src)
+			if err != nil {
+				return nil, fmt.Errorf("could not determine address: %w", err)
+			}
+
+			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
+			if err != nil {
+				return nil, fmt.Errorf("could not determine address: %w", err)
+			}
+
+			if len(addrs) == 0 {
+				return nil, fmt.Errorf("interface has no addresses")
+			}
+
+			p.Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
+		}
+
 		addrs, err := net.LookupHost(p.Dst)
 		if err != nil {
 			return nil, fmt.Errorf("could not resolve %s: %w", p.Dst, err)
@@ -98,10 +119,7 @@ func (f *Failover) Run() {
 						log.Println(err)
 						return
 					}
-					finishedChan := make(chan *probing.Statistics)
-					pinger.OnFinish = func(stats *probing.Statistics) {
-						finishedChan <- stats
-					}
+					pinger.Source = src
 
 					// This is all working around Pinger.Run() not taking a context.
 					//
@@ -115,6 +133,11 @@ func (f *Failover) Run() {
 					//     we still want to let the full time period elapse (starting from when we sent the request).
 					//     E.g. if we are sending one request per second, and we receive a response after 100ms, then
 					//     we still want to wait the remaining 900ms before sending the next request.
+
+					finishedChan := make(chan *probing.Statistics)
+					pinger.OnFinish = func(stats *probing.Statistics) {
+						finishedChan <- stats
+					}
 
 					// Note that we never set a timeout on the pinger itself
 					pinger.SetPrivileged(f.privileged)
