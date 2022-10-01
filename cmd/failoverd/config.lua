@@ -14,3 +14,7 @@ probes = {
 function on_update(ps)
     io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
 end
+
+function on_quit()
+    print("Shutting down")
+end

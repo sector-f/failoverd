@@ -16,6 +16,7 @@ type config struct {
 	Probes          []failover.Probe
 
 	OnUpdateFunc *lua.LFunction
+	OnQuitFunc   *lua.LFunction
 }
 
 func configFromLua(l *lua.LState) (config, error) {
@@ -78,6 +79,13 @@ func configFromLua(l *lua.LState) (config, error) {
 		c.OnUpdateFunc = onUpdateFunc
 	default:
 		return c, fmt.Errorf("`on_update` must be a function, not a %s", onUpdateFunc.Type())
+	}
+
+	switch onQuitFunc := l.GetGlobal("on_quit").(type) {
+	case *lua.LFunction:
+		c.OnQuitFunc = onQuitFunc
+	default:
+		return c, fmt.Errorf("`on_quit` must be a function, not a %s", onQuitFunc.Type())
 	}
 
 	// Set defaults/overrides

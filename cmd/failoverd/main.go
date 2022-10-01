@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/sector-f/failover"
@@ -31,8 +32,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-
 	go f.Run()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt)
 
 	ticker := time.NewTicker(config.UpdateFrequency)
 	var lowestProbeStats failover.ProbeStats
@@ -70,6 +73,21 @@ func main() {
 			if err != nil {
 				log.Printf("Error calling on_update function: %v\n", err)
 			}
+		case <-sigChan:
+			err := luaState.CallByParam(
+				lua.P{
+					Fn:      config.OnQuitFunc,
+					NRet:    0,
+					Protect: true,
+				},
+			)
+
+			if err != nil {
+				log.Printf("Error calling on_quit function: %v\n", err)
+			}
+
+			f.Stop()
+			return
 		}
 	}
 }
