@@ -61,7 +61,7 @@ func configFromLua(l *lua.LState) (config, error) {
 				case lua.LString:
 					p = append(p, failover.Probe{Dst: string(dst)})
 				default:
-					err = fmt.Errorf("`probe` item must be a number, not a %s", dst.Type())
+					err = fmt.Errorf("`probe` item must be a string, not a %s", dst.Type())
 				}
 			},
 		)
