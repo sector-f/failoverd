@@ -5,14 +5,14 @@ num_seconds = 10     -- Pass on_update the stats for the probe with the lowest p
 
 -- List of endpoints to ping
 probes = {
-    -- "192.168.0.1",
-    "192.168.0.2",
-    "192.168.0.3",
+    -- probe.new("192.168.0.2", "eth0"), -- Optionally specify source address or interface
+    probe.new("192.168.0.2"),
+    probe.new("192.168.0.3"),
 }
 
 -- function on_recv(gps)
---    ps = gps:lowest_loss()
---    io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
+   -- ps = gps:lowest_loss()
+   -- io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
 -- end
 
 -- Gets called every update_frequency seconds

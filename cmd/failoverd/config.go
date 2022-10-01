@@ -58,11 +58,16 @@ func configFromLua(l *lua.LState) (config, error) {
 		var err error = nil
 		probes.ForEach(
 			func(_ lua.LValue, val lua.LValue) {
-				switch dst := val.(type) {
-				case lua.LString:
-					p = append(p, failover.Probe{Dst: string(dst)})
+				switch probeItem := val.(type) {
+				case *lua.LUserData:
+					switch probe := probeItem.Value.(type) {
+					case failover.Probe:
+						p = append(p, probe)
+					default:
+						err = fmt.Errorf("`probes` item must be a probe")
+					}
 				default:
-					err = fmt.Errorf("`probe` item must be a string, not a %s", dst.Type())
+					err = fmt.Errorf("`probes` item must be a probe, not a %s", probeItem.Type())
 				}
 			},
 		)

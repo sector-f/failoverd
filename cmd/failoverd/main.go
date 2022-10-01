@@ -16,15 +16,14 @@ func main() {
 	defer luaState.Close()
 
 	configFilename := "config.lua" // TODO: make configurable
+	registerTypes(luaState)
 	luaState.DoFile(configFilename)
+
 	config, err := configFromLua(luaState)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
 		os.Exit(1)
 	}
-
-	registerProbeStatsType(luaState)
-	registerGlobalProbeStatsType(luaState)
 
 	probes := config.Probes
 

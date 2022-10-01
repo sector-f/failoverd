@@ -8,7 +8,14 @@ import (
 const (
 	luaProbeStatsTypeName       = "probe_stats"
 	luaGlobalProbeStatsTypeName = "global_probe_stats"
+	luaProbeTypeName            = "probe"
 )
+
+func registerTypes(l *lua.LState) {
+	registerProbeStatsType(l)
+	registerGlobalProbeStatsType(l)
+	registerProbeType(l)
+}
 
 func registerGlobalProbeStatsType(l *lua.LState) {
 	mt := l.NewTypeMetatable(luaGlobalProbeStatsTypeName)
@@ -61,9 +68,9 @@ func registerProbeStatsType(l *lua.LState) {
 	l.SetGlobal(luaProbeStatsTypeName, mt)
 
 	methods := map[string]lua.LGFunction{
-		"src":  probeGetSrc,
-		"dst":  probeGetDst,
-		"loss": probeGetLoss,
+		"src":  probeStatsGetSrc,
+		"dst":  probeStatsGetDst,
+		"loss": probeStatsGetLoss,
 	}
 
 	l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), methods))
@@ -74,24 +81,53 @@ func checkProbeStats(l *lua.LState) *failover.ProbeStats {
 	if v, ok := ud.Value.(*failover.ProbeStats); ok {
 		return v
 	}
-	l.ArgError(1, "probe expected")
+	l.ArgError(1, "probe_stats expected")
 	return nil
 }
 
-func probeGetSrc(l *lua.LState) int {
+func probeStatsGetSrc(l *lua.LState) int {
 	p := checkProbeStats(l)
 	l.Push(lua.LString(p.Src))
 	return 1
 }
 
-func probeGetDst(l *lua.LState) int {
+func probeStatsGetDst(l *lua.LState) int {
 	p := checkProbeStats(l)
 	l.Push(lua.LString(p.Dst))
 	return 1
 }
 
-func probeGetLoss(l *lua.LState) int {
+func probeStatsGetLoss(l *lua.LState) int {
 	p := checkProbeStats(l)
 	l.Push(lua.LNumber(p.Loss))
+	return 1
+}
+
+func registerProbeType(l *lua.LState) {
+	mt := l.NewTypeMetatable(luaProbeTypeName)
+	l.SetGlobal(luaProbeTypeName, mt)
+	l.SetField(mt, "new", l.NewFunction(newProbe))
+	// l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), nil))
+}
+
+func newProbe(l *lua.LState) int {
+	p := failover.Probe{}
+
+	switch l.GetTop() {
+	case 1:
+		p.Dst = l.CheckString(1)
+	case 2:
+		p.Dst = l.CheckString(1)
+		p.Src = l.CheckString(2)
+	default:
+		l.ArgError(1, "no destination specified")
+		return 0
+	}
+
+	l.Push(&lua.LUserData{
+		Value:     p,
+		Metatable: l.GetTypeMetatable(luaProbeTypeName),
+	})
+
 	return 1
 }
