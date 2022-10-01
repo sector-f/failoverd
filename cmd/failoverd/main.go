@@ -61,29 +61,33 @@ func main() {
 				Metatable: luaState.GetTypeMetatable(luaProbeStatsTypeName),
 			}
 
-			err := luaState.CallByParam(
-				lua.P{
-					Fn:      config.OnUpdateFunc, // I suppose this name could be hardcoded in?
-					NRet:    0,
-					Protect: true,
-				},
-				ud,
-			)
+			if config.OnUpdateFunc.Type() != lua.LTNil {
+				err := luaState.CallByParam(
+					lua.P{
+						Fn:      config.OnUpdateFunc, // I suppose this name could be hardcoded in?
+						NRet:    0,
+						Protect: true,
+					},
+					ud,
+				)
 
-			if err != nil {
-				log.Printf("Error calling on_update function: %v\n", err)
+				if err != nil {
+					log.Printf("Error calling on_update function: %v\n", err)
+				}
 			}
 		case <-sigChan:
-			err := luaState.CallByParam(
-				lua.P{
-					Fn:      config.OnQuitFunc,
-					NRet:    0,
-					Protect: true,
-				},
-			)
+			if config.OnQuitFunc.Type() != lua.LTNil {
+				err := luaState.CallByParam(
+					lua.P{
+						Fn:      config.OnQuitFunc,
+						NRet:    0,
+						Protect: true,
+					},
+				)
 
-			if err != nil {
-				log.Printf("Error calling on_quit function: %v\n", err)
+				if err != nil {
+					log.Printf("Error calling on_quit function: %v\n", err)
+				}
 			}
 
 			f.Stop()

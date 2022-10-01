@@ -15,8 +15,8 @@ type config struct {
 	NumSeconds      uint
 	Probes          []failover.Probe
 
-	OnUpdateFunc *lua.LFunction
-	OnQuitFunc   *lua.LFunction
+	OnUpdateFunc lua.LValue
+	OnQuitFunc   lua.LValue
 }
 
 func configFromLua(l *lua.LState) (config, error) {
@@ -75,14 +75,14 @@ func configFromLua(l *lua.LState) (config, error) {
 	}
 
 	switch onUpdateFunc := l.GetGlobal("on_update").(type) {
-	case *lua.LFunction:
+	case *lua.LFunction, *lua.LNilType:
 		c.OnUpdateFunc = onUpdateFunc
 	default:
 		return c, fmt.Errorf("`on_update` must be a function, not a %s", onUpdateFunc.Type())
 	}
 
 	switch onQuitFunc := l.GetGlobal("on_quit").(type) {
-	case *lua.LFunction:
+	case *lua.LFunction, *lua.LNilType:
 		c.OnQuitFunc = onQuitFunc
 	default:
 		return c, fmt.Errorf("`on_quit` must be a function, not a %s", onQuitFunc.Type())
