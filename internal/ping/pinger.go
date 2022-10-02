@@ -66,7 +66,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		}
 
 		resolvedProbes = append(resolvedProbes, Probe{Src: probe.Src, Dst: addrs[0]})
-		stoppers[probe.Dst] = make(chan struct{})
+		stoppers[addrs[0]] = make(chan struct{})
 		resolveMap[probe.Dst] = addrs[0]
 	}
 
@@ -80,9 +80,10 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 	p := &Pinger{
 		probes: resolvedProbes,
 
-		closeChan: make(chan struct{}),
-		stoppers:  stoppers,
-		stopWG:    sync.WaitGroup{},
+		closeChan:  make(chan struct{}),
+		stoppers:   stoppers,
+		stopWG:     sync.WaitGroup{},
+		resolveMap: resolveMap,
 
 		globalStats: gps,
 
@@ -149,6 +150,21 @@ func (p *Pinger) Stats() GlobalProbeStats {
 func (p *Pinger) Stop() {
 	p.closeChan <- struct{}{}
 	p.stopWG.Wait()
+}
+
+func (p *Pinger) StopProbe(dst string) error {
+	original, ok := p.resolveMap[dst]
+	if !ok {
+		return fmt.Errorf("1 probe not found: %s", dst)
+	}
+
+	stopper, ok := p.stoppers[original]
+	if !ok {
+		return fmt.Errorf("2 probe not found: %s", dst)
+	}
+
+	stopper <- struct{}{}
+	return nil
 }
 
 type Option func(p *Pinger)
