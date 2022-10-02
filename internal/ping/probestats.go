@@ -17,6 +17,25 @@ func (gps GlobalProbeStats) Get(dst string) ProbeStats {
 	return gps.Stats[gps.resolveMap[dst]]
 }
 
+func (gps *GlobalProbeStats) Remove(dst string) {
+	resolvedAddr, ok := gps.resolveMap[dst]
+	if !ok {
+		return
+	}
+
+	delete(gps.resolveMap, dst)
+	delete(gps.Stats, resolvedAddr)
+
+	idx := 0
+	for i, probe := range gps.probes {
+		if resolvedAddr == probe.Dst {
+			idx = i
+			break
+		}
+	}
+	gps.probes = append(gps.probes[:idx], gps.probes[idx+1:]...)
+}
+
 func (gps GlobalProbeStats) LowestLoss() ProbeStats {
 	var lowestProbeStats ProbeStats
 

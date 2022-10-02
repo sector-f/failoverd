@@ -21,9 +21,11 @@ type Pinger struct {
 
 	globalStats GlobalProbeStats
 	probes      []Probe
-	resolveMap  map[string]string        // Maps client-specified destinations to resolved destinations
-	stoppers    map[string]chan struct{} // Maps resolved destinations to channels which are used to stop running pings
-	stopWG      sync.WaitGroup
+	resolveMap  map[string]string // Maps client-specified destinations to resolved destinations
+
+	stopProbeChan chan string
+	stoppers      map[string]chan struct{} // Maps resolved destinations to channels which are used to stop running pings
+	stopWG        sync.WaitGroup
 
 	statTracker map[string]*rb.RingBuffer // Maps resolved destination address to ring buffer
 	statCh      chan ProbeStats
@@ -81,9 +83,11 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		probes: resolvedProbes,
 
 		closeChan:  make(chan struct{}),
-		stoppers:   stoppers,
-		stopWG:     sync.WaitGroup{},
 		resolveMap: resolveMap,
+
+		stopProbeChan: make(chan string),
+		stoppers:      stoppers,
+		stopWG:        sync.WaitGroup{},
 
 		globalStats: gps,
 
@@ -111,6 +115,36 @@ func (p *Pinger) Run() {
 
 	for {
 		select {
+		case dst := <-p.stopProbeChan:
+			p.mu.Lock()
+
+			resolvedAddr, ok := p.resolveMap[dst]
+			if !ok {
+				break
+			}
+
+			stopper, ok := p.stoppers[resolvedAddr]
+			if !ok {
+				break
+			}
+
+			stopper <- struct{}{}
+
+			delete(p.resolveMap, dst)
+			delete(p.stoppers, resolvedAddr)
+
+			idx := 0
+			for i, probe := range p.probes {
+				if resolvedAddr == probe.Dst {
+					idx = i
+					break
+				}
+			}
+			p.probes = append(p.probes[:idx], p.probes[idx+1:]...)
+
+			p.globalStats.Remove(dst)
+
+			p.mu.Unlock()
 		case msg := <-p.statCh:
 			p.mu.Lock()
 
@@ -152,19 +186,8 @@ func (p *Pinger) Stop() {
 	p.stopWG.Wait()
 }
 
-func (p *Pinger) StopProbe(dst string) error {
-	original, ok := p.resolveMap[dst]
-	if !ok {
-		return fmt.Errorf("1 probe not found: %s", dst)
-	}
-
-	stopper, ok := p.stoppers[original]
-	if !ok {
-		return fmt.Errorf("2 probe not found: %s", dst)
-	}
-
-	stopper <- struct{}{}
-	return nil
+func (p *Pinger) StopProbe(dst string) {
+	p.stopProbeChan <- dst
 }
 
 type Option func(p *Pinger)
