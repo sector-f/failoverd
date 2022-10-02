@@ -23,7 +23,7 @@ type RingBuffer struct {
 }
 
 func New(seconds uint) *RingBuffer {
-	ticker := time.NewTicker(1 * time.Second) // TODO: make configurable?
+	ticker := time.NewTicker(1 * time.Second)
 	return newWithChannel(seconds, ticker.C)
 }
 
