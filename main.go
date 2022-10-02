@@ -34,13 +34,18 @@ func main() {
 
 	probes := config.Probes
 
-	f, err := ping.NewPinger(probes, ping.WithPrivileged(config.Privileged))
+	p, err := ping.NewPinger(
+		probes,
+		ping.WithPingFrequency(config.PingFrequency),
+		ping.WithNumSeconds(config.NumSeconds),
+		ping.WithPrivileged(config.Privileged),
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	f.OnRecv = func(gps ping.GlobalProbeStats) {
+	p.OnRecv = func(gps ping.GlobalProbeStats) {
 		ud := &lua.LUserData{
 			Value:     gps,
 			Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
@@ -62,7 +67,7 @@ func main() {
 		}
 	}
 
-	go f.Run()
+	go p.Run()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
@@ -71,7 +76,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			stats := f.Stats()
+			stats := p.Stats()
 
 			ud := &lua.LUserData{
 				Value:     stats,
@@ -107,7 +112,7 @@ func main() {
 				}
 			}
 
-			f.Stop()
+			p.Stop()
 			return
 		}
 	}
