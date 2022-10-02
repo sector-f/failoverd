@@ -20,12 +20,13 @@ type Pinger struct {
 	privileged   bool
 	numSeconds   uint
 
-	closeChan    chan struct{}
-	isClosedChan chan struct{}
+	closeChan chan struct{}
 
 	globalStats GlobalProbeStats
 	probes      []Probe
-	resolveMap  map[string]string // Maps client-specified destinations to resolved destinations
+	resolveMap  map[string]string        // Maps client-specified destinations to resolved destinations
+	stoppers    map[string]chan struct{} // Maps resolved destinations to channels which are used to stop running pings
+	stopWG      sync.WaitGroup
 
 	statTracker map[string]*rb.RingBuffer // Maps resolved destination address to ring buffer
 	statCh      chan ProbeStats
@@ -35,6 +36,7 @@ type Pinger struct {
 func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 	resolvedProbes := make([]Probe, 0, len(probes))
 	resolveMap := make(map[string]string)
+	stoppers := make(map[string]chan struct{})
 
 	for _, probe := range probes {
 		// If specified source is not an address, treat it as a network interface name
@@ -67,6 +69,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		}
 
 		resolvedProbes = append(resolvedProbes, Probe{Src: probe.Src, Dst: addrs[0]})
+		stoppers[probe.Dst] = make(chan struct{})
 		resolveMap[probe.Dst] = addrs[0]
 	}
 
@@ -80,8 +83,9 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 	p := &Pinger{
 		probes: resolvedProbes,
 
-		closeChan:    make(chan struct{}),
-		isClosedChan: make(chan struct{}),
+		closeChan: make(chan struct{}),
+		stoppers:  stoppers,
+		stopWG:    sync.WaitGroup{},
 
 		globalStats: gps,
 
@@ -102,80 +106,9 @@ func (p *Pinger) Run() {
 		p.numSeconds = 10
 	}
 
-	for _, probe := range p.probes {
-		p.statTracker[probe.Dst] = rb.New(p.numSeconds)
-
-		go func(src, dst string) {
-			for {
-				select {
-				case <-p.isClosedChan:
-					return
-				default:
-					pinger, err := probing.NewPinger(dst)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					pinger.Source = src
-
-					// This is all working around Pinger.Run() not taking a context.
-					//
-					// The desired behavior is as follows:
-					//   * Send a ping request at a fixed period, e.g. once per second, and wait for a response.
-					//
-					//   * If we are still waiting for a response when it's time to send the next request,
-					//     then stop waiting for a response to the current request, and send the next request.
-					//
-					//   * If we _do_ get a response before it's time to send another request, then
-					//     we still want to let the full time period elapse (starting from when we sent the request).
-					//     E.g. if we are sending one request per second, and we receive a response after 100ms, then
-					//     we still want to wait the remaining 900ms before sending the next request.
-
-					finishedChan := make(chan *probing.Statistics)
-					pinger.OnFinish = func(stats *probing.Statistics) {
-						finishedChan <- stats
-					}
-
-					// Note that we never set a timeout on the pinger itself
-					pinger.SetPrivileged(p.privileged)
-					pinger.Count = 1
-					go func() {
-						pinger.Run() // Blocks until it has dealt with a packet
-					}()
-
-					// Create a context that is canceled once we want to send the next ping
-					ctx, cancelFunc := context.WithTimeout(context.Background(), p.pingFreqency)
-
-					// At this point, three things can happen:
-					//   * We get a response to the ping request in time
-					//   * We _don't_ get a response to the ping request in time, and therefore time out
-					//   * Stop() is called, so we want to abandon the running ping
-					select {
-					case stats := <-finishedChan:
-						p.statCh <- ProbeStats{
-							Src:  src,
-							Dst:  dst,
-							Loss: stats.PacketLoss,
-						}
-					case <-ctx.Done():
-						// Timed out
-						pinger.Stop()
-						p.statCh <- ProbeStats{
-							Src:  src,
-							Dst:  dst,
-							Loss: 100.0, // We're only sending one ping at a time, so a timeout means 100% packet loss
-						}
-					case <-p.isClosedChan:
-						pinger.Stop()
-						cancelFunc()
-						return
-					}
-
-					<-ctx.Done()
-					cancelFunc()
-				}
-			}
-		}(probe.Src, probe.Dst)
+	for i, _ := range p.probes {
+		p.statTracker[p.probes[i].Dst] = rb.New(p.numSeconds)
+		go p.probes[i].run(p.pingFreqency, p.privileged, p.statCh, p.stoppers[p.probes[i].Dst], &p.stopWG)
 	}
 
 	for {
@@ -200,8 +133,86 @@ func (p *Pinger) Run() {
 				p.OnRecv(p.globalStats)
 			}
 		case <-p.closeChan:
-			close(p.isClosedChan)
+			for _, ch := range p.stoppers {
+				ch <- struct{}{}
+			}
+
 			return
+		}
+	}
+}
+
+func (probe *Probe) run(pingFrequency time.Duration, privileged bool, statCh chan ProbeStats, stopChan chan struct{}, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	for {
+		select {
+		case <-stopChan:
+			return
+		default:
+			pinger, err := probing.NewPinger(probe.Dst)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			pinger.Source = probe.Src
+
+			// This is all working around Pinger.Run() not taking a context.
+			//
+			// The desired behavior is as follows:
+			//   * Send a ping request at a fixed period, e.g. once per second, and wait for a response.
+			//
+			//   * If we are still waiting for a response when it's time to send the next request,
+			//     then stop waiting for a response to the current request, and send the next request.
+			//
+			//   * If we _do_ get a response before it's time to send another request, then
+			//     we still want to let the full time period elapse (starting from when we sent the request).
+			//     E.g. if we are sending one request per second, and we receive a response after 100ms, then
+			//     we still want to wait the remaining 900ms before sending the next request.
+
+			finishedChan := make(chan *probing.Statistics)
+			pinger.OnFinish = func(stats *probing.Statistics) {
+				finishedChan <- stats
+			}
+
+			// Note that we never set a timeout on the pinger itself
+			pinger.SetPrivileged(privileged)
+			pinger.Count = 1
+			go func() {
+				pinger.Run() // Blocks until it has dealt with a packet
+			}()
+
+			// Create a context that is canceled once we want to send the next ping
+			ctx, cancelFunc := context.WithTimeout(context.Background(), pingFrequency)
+
+			// At this point, three things can happen:
+			//   * We get a response to the ping request in time
+			//   * We _don't_ get a response to the ping request in time, and therefore time out
+			//   * Stop() is called, so we want to abandon the running ping
+			select {
+			case stats := <-finishedChan:
+				statCh <- ProbeStats{
+					Src:  probe.Src,
+					Dst:  probe.Dst,
+					Loss: stats.PacketLoss,
+				}
+			case <-ctx.Done():
+				// Timed out
+				pinger.Stop()
+				statCh <- ProbeStats{
+					Src:  probe.Src,
+					Dst:  probe.Dst,
+					Loss: 100.0, // We're only sending one ping at a time, so a timeout means 100% packet loss
+				}
+			case <-stopChan:
+				pinger.Stop()
+				cancelFunc()
+				return
+			}
+
+			<-ctx.Done()
+			cancelFunc()
 		}
 	}
 }
@@ -215,6 +226,7 @@ func (p *Pinger) Stats() GlobalProbeStats {
 
 func (p *Pinger) Stop() {
 	p.closeChan <- struct{}{}
+	p.stopWG.Wait()
 }
 
 type Option func(p *Pinger)
