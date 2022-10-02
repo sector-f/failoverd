@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sector-f/failover"
+	"github.com/sector-f/failover/internal/ping"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -13,7 +13,7 @@ type config struct {
 	UpdateFrequency time.Duration
 	Privileged      bool
 	NumSeconds      uint
-	Probes          []failover.Probe
+	Probes          []ping.Probe
 
 	OnRecvFunc   lua.LValue
 	OnUpdateFunc lua.LValue
@@ -53,7 +53,7 @@ func configFromLua(l *lua.LState) (config, error) {
 
 	switch probes := l.GetGlobal("probes").(type) {
 	case *lua.LTable:
-		p := []failover.Probe{}
+		p := []ping.Probe{}
 
 		var err error = nil
 		probes.ForEach(
@@ -61,7 +61,7 @@ func configFromLua(l *lua.LState) (config, error) {
 				switch probeItem := val.(type) {
 				case *lua.LUserData:
 					switch probe := probeItem.Value.(type) {
-					case failover.Probe:
+					case ping.Probe:
 						p = append(p, probe)
 					default:
 						err = fmt.Errorf("`probes` item must be a probe")

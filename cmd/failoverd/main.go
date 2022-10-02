@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/sector-f/failover"
+	"github.com/sector-f/failover/internal/ping"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -27,13 +27,13 @@ func main() {
 
 	probes := config.Probes
 
-	f, err := failover.NewFailover(probes, failover.WithPrivileged(config.Privileged))
+	f, err := ping.NewPinger(probes, ping.WithPrivileged(config.Privileged))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	f.OnRecv = func(gps failover.GlobalProbeStats) {
+	f.OnRecv = func(gps ping.GlobalProbeStats) {
 		ud := &lua.LUserData{
 			Value:     gps,
 			Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),

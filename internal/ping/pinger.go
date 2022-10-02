@@ -1,4 +1,4 @@
-package failover
+package ping
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-type Failover struct {
+type Pinger struct {
 	OnRecv func(gps GlobalProbeStats)
 
 	pingFreqency time.Duration
@@ -34,7 +34,7 @@ type Failover struct {
 	mu          sync.Mutex
 }
 
-func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
+func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 	resolvedProbes := make([]Probe, 0, len(probes))
 	resolveMap := make(map[string]string)
 
@@ -79,7 +79,7 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 		resolveMap: resolveMap,
 	}
 
-	f := &Failover{
+	f := &Pinger{
 		probes: resolvedProbes,
 
 		closeChan:    make(chan struct{}),
@@ -96,22 +96,22 @@ func NewFailover(probes []Probe, options ...Option) (*Failover, error) {
 	return f, nil
 }
 
-func (f *Failover) Run() {
-	if f.pingFreqency <= 0 {
-		f.pingFreqency = 1 * time.Second
+func (p *Pinger) Run() {
+	if p.pingFreqency <= 0 {
+		p.pingFreqency = 1 * time.Second
 	}
 
-	if f.numSeconds <= 0 {
-		f.numSeconds = 10
+	if p.numSeconds <= 0 {
+		p.numSeconds = 10
 	}
 
-	for _, probe := range f.probes {
-		f.statTracker[probe.Dst] = rb.New(f.numSeconds)
+	for _, probe := range p.probes {
+		p.statTracker[probe.Dst] = rb.New(p.numSeconds)
 
 		go func(src, dst string) {
 			for {
 				select {
-				case <-f.isClosedChan:
+				case <-p.isClosedChan:
 					return
 				default:
 					pinger, err := probing.NewPinger(dst)
@@ -140,14 +140,14 @@ func (f *Failover) Run() {
 					}
 
 					// Note that we never set a timeout on the pinger itself
-					pinger.SetPrivileged(f.privileged)
+					pinger.SetPrivileged(p.privileged)
 					pinger.Count = 1
 					go func() {
 						pinger.Run() // Blocks until it has dealt with a packet
 					}()
 
 					// Create a context that is canceled once we want to send the next ping
-					ctx, cancelFunc := context.WithTimeout(context.Background(), f.pingFreqency)
+					ctx, cancelFunc := context.WithTimeout(context.Background(), p.pingFreqency)
 
 					// At this point, three things can happen:
 					//   * We get a response to the ping request in time
@@ -155,7 +155,7 @@ func (f *Failover) Run() {
 					//   * Stop() is called, so we want to abandon the running ping
 					select {
 					case stats := <-finishedChan:
-						f.statCh <- ProbeStats{
+						p.statCh <- ProbeStats{
 							Src:  src,
 							Dst:  dst,
 							Loss: stats.PacketLoss,
@@ -163,12 +163,12 @@ func (f *Failover) Run() {
 					case <-ctx.Done():
 						// Timed out
 						pinger.Stop()
-						f.statCh <- ProbeStats{
+						p.statCh <- ProbeStats{
 							Src:  src,
 							Dst:  dst,
 							Loss: 100.0, // We're only sending one ping at a time, so a timeout means 100% packet loss
 						}
-					case <-f.isClosedChan:
+					case <-p.isClosedChan:
 						pinger.Stop()
 						cancelFunc()
 						return
@@ -183,11 +183,11 @@ func (f *Failover) Run() {
 
 	for {
 		select {
-		case f.globalStatsChan <- f.globalStats:
-		case msg := <-f.statCh:
-			f.mu.Lock()
+		case p.globalStatsChan <- p.globalStats:
+		case msg := <-p.statCh:
+			p.mu.Lock()
 
-			statTracker := f.statTracker[msg.Dst]
+			statTracker := p.statTracker[msg.Dst]
 			statTracker.Insert(msg.Loss)
 
 			stats := ProbeStats{
@@ -196,45 +196,45 @@ func (f *Failover) Run() {
 				Loss: statTracker.Average(),
 			}
 
-			f.globalStats.Stats[msg.Dst] = stats
+			p.globalStats.Stats[msg.Dst] = stats
 
-			if f.OnRecv != nil {
-				f.OnRecv(f.globalStats)
+			if p.OnRecv != nil {
+				p.OnRecv(p.globalStats)
 			}
 
-			f.mu.Unlock()
-		case <-f.closeChan:
-			close(f.isClosedChan)
+			p.mu.Unlock()
+		case <-p.closeChan:
+			close(p.isClosedChan)
 			return
 		}
 	}
 }
 
-func (f *Failover) Stats() GlobalProbeStats {
-	return <-f.globalStatsChan
+func (p *Pinger) Stats() GlobalProbeStats {
+	return <-p.globalStatsChan
 }
 
-func (f *Failover) Stop() {
-	f.closeChan <- struct{}{}
+func (p *Pinger) Stop() {
+	p.closeChan <- struct{}{}
 }
 
-type Option func(f *Failover)
+type Option func(p *Pinger)
 
 func WithPingFrequency(t time.Duration) Option {
-	return func(f *Failover) {
-		f.pingFreqency = t
+	return func(p *Pinger) {
+		p.pingFreqency = t
 	}
 }
 
-func WithPrivileged(p bool) Option {
-	return func(f *Failover) {
-		f.privileged = p
+func WithPrivileged(privileged bool) Option {
+	return func(p *Pinger) {
+		p.privileged = privileged
 	}
 }
 
 func WithNumSeconds(n uint) Option {
-	return func(f *Failover) {
-		f.numSeconds = n
+	return func(p *Pinger) {
+		p.numSeconds = n
 	}
 }
 

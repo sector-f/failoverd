@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/sector-f/failover"
+	"github.com/sector-f/failover/internal/ping"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -29,13 +29,13 @@ func registerGlobalProbeStatsType(l *lua.LState) {
 	l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), methods))
 }
 
-func checkGlobalProbeStats(l *lua.LState) failover.GlobalProbeStats {
+func checkGlobalProbeStats(l *lua.LState) ping.GlobalProbeStats {
 	ud := l.CheckUserData(1)
-	if v, ok := ud.Value.(failover.GlobalProbeStats); ok {
+	if v, ok := ud.Value.(ping.GlobalProbeStats); ok {
 		return v
 	}
 	l.ArgError(1, "global_probe_stats expected")
-	return failover.GlobalProbeStats{}
+	return ping.GlobalProbeStats{}
 }
 
 func globalProbeStatsGet(l *lua.LState) int {
@@ -76,9 +76,9 @@ func registerProbeStatsType(l *lua.LState) {
 	l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), methods))
 }
 
-func checkProbeStats(l *lua.LState) *failover.ProbeStats {
+func checkProbeStats(l *lua.LState) *ping.ProbeStats {
 	ud := l.CheckUserData(1)
-	if v, ok := ud.Value.(*failover.ProbeStats); ok {
+	if v, ok := ud.Value.(*ping.ProbeStats); ok {
 		return v
 	}
 	l.ArgError(1, "probe_stats expected")
@@ -111,7 +111,7 @@ func registerProbeType(l *lua.LState) {
 }
 
 func newProbe(l *lua.LState) int {
-	p := failover.Probe{}
+	p := ping.Probe{}
 
 	switch l.GetTop() {
 	case 1:
