@@ -1,4 +1,4 @@
-module github.com/sector-f/failover
+module github.com/sector-f/failoverd
 
 go 1.19
 

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/sector-f/failover/internal/ping"
+	"github.com/sector-f/failoverd/internal/ping"
 	lua "github.com/yuin/gopher-lua"
 )
 

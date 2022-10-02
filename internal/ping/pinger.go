@@ -9,7 +9,7 @@ import (
 	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
-	rb "github.com/sector-f/failover/internal/ringbuffer"
+	rb "github.com/sector-f/failoverd/internal/ringbuffer"
 	"github.com/vishvananda/netlink"
 )
 
