@@ -27,7 +27,7 @@ type Pinger struct {
 	probes      []Probe
 	resolveMap  map[string]string // Maps client-specified destinations to resolved destinations
 
-	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
+	statTracker map[string]*rb.RingBuffer // Maps resolved destination address to ring buffer
 	statCh      chan ProbeStats
 	mu          sync.Mutex
 }
@@ -36,38 +36,38 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 	resolvedProbes := make([]Probe, 0, len(probes))
 	resolveMap := make(map[string]string)
 
-	for _, p := range probes {
+	for _, probe := range probes {
 		// If specified source is not an address, treat it as a network interface name
 		// and attempt to determine its address using netlink.
-		if p.Src != "" && net.ParseIP(p.Src) == nil {
-			link, err := netlink.LinkByName(p.Src)
+		if probe.Src != "" && net.ParseIP(probe.Src) == nil {
+			link, err := netlink.LinkByName(probe.Src)
 			if err != nil {
-				return nil, fmt.Errorf("could not determine address of %s: %w", p.Src, err)
+				return nil, fmt.Errorf("could not determine address of %s: %w", probe.Src, err)
 			}
 
 			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4) // TODO: Handle IPv6?
 			if err != nil {
-				return nil, fmt.Errorf("could not determine address of %s: %w", p.Src, err)
+				return nil, fmt.Errorf("could not determine address of %s: %w", probe.Src, err)
 			}
 
 			if len(addrs) == 0 {
 				return nil, fmt.Errorf("interface has no addresses")
 			}
 
-			p.Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
+			probe.Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
 		}
 
-		addrs, err := net.LookupHost(p.Dst)
+		addrs, err := net.LookupHost(probe.Dst)
 		if err != nil {
-			return nil, fmt.Errorf("could not resolve %s: %w", p.Dst, err)
+			return nil, fmt.Errorf("could not resolve %s: %w", probe.Dst, err)
 		}
 
 		if len(addrs) == 0 {
-			return nil, fmt.Errorf("no addresses returned for %s", p.Dst)
+			return nil, fmt.Errorf("no addresses returned for %s", probe.Dst)
 		}
 
-		resolvedProbes = append(resolvedProbes, Probe{Src: p.Src, Dst: addrs[0]})
-		resolveMap[p.Dst] = addrs[0]
+		resolvedProbes = append(resolvedProbes, Probe{Src: probe.Src, Dst: addrs[0]})
+		resolveMap[probe.Dst] = addrs[0]
 	}
 
 	gps := GlobalProbeStats{
@@ -77,7 +77,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		resolveMap: resolveMap,
 	}
 
-	f := &Pinger{
+	p := &Pinger{
 		probes: resolvedProbes,
 
 		closeChan:    make(chan struct{}),
@@ -90,7 +90,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		mu:          sync.Mutex{},
 	}
 
-	return f, nil
+	return p, nil
 }
 
 func (p *Pinger) Run() {
