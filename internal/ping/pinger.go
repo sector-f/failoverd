@@ -23,11 +23,9 @@ type Pinger struct {
 	closeChan    chan struct{}
 	isClosedChan chan struct{}
 
-	globalStats     GlobalProbeStats
-	globalStatsChan chan GlobalProbeStats
-
-	probes     []Probe
-	resolveMap map[string]string // Maps client-specified destinations to resolved destinations
+	globalStats GlobalProbeStats
+	probes      []Probe
+	resolveMap  map[string]string // Maps client-specified destinations to resolved destinations
 
 	statTracker map[string]*rb.RingBuffer // Map destination address to ring buffer
 	statCh      chan ProbeStats
@@ -85,8 +83,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		closeChan:    make(chan struct{}),
 		isClosedChan: make(chan struct{}),
 
-		globalStats:     gps,
-		globalStatsChan: make(chan GlobalProbeStats),
+		globalStats: gps,
 
 		statTracker: make(map[string]*rb.RingBuffer),
 		statCh:      make(chan ProbeStats),
@@ -183,7 +180,6 @@ func (p *Pinger) Run() {
 
 	for {
 		select {
-		case p.globalStatsChan <- p.globalStats:
 		case msg := <-p.statCh:
 			p.mu.Lock()
 
@@ -198,11 +194,11 @@ func (p *Pinger) Run() {
 
 			p.globalStats.Stats[msg.Dst] = stats
 
+			p.mu.Unlock()
+
 			if p.OnRecv != nil {
 				p.OnRecv(p.globalStats)
 			}
-
-			p.mu.Unlock()
 		case <-p.closeChan:
 			close(p.isClosedChan)
 			return
@@ -211,7 +207,10 @@ func (p *Pinger) Run() {
 }
 
 func (p *Pinger) Stats() GlobalProbeStats {
-	return <-p.globalStatsChan
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.globalStats
 }
 
 func (p *Pinger) Stop() {
