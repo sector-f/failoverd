@@ -21,7 +21,7 @@ num_seconds = 10
 
 -- List of endpoints to ping
 probes = {
-    probe.new("192.168.0.1"),         -- Pings 192.168.0.1 using eth0's address
+    probe.new("192.168.0.1"),         -- Pings 192.168.0.1
     probe.new("192.168.0.2", "eth0"), -- Pings 192.168.0.2 using eth0's address
     probe.new("google.com"),          -- Resolves google.com and pings its address
 }
