@@ -10,12 +10,10 @@ probes = {
     probe.new("192.168.0.3"),
 }
 
--- function on_recv(gps)
-   -- ps = gps:lowest_loss()
-   -- io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
--- end
+function on_recv(gps, ps)
+   io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
+end
 
--- Gets called every update_frequency seconds
 function on_update(gps)
     ps = gps:lowest_loss()
     io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))

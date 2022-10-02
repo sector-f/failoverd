@@ -11,7 +11,7 @@ import (
 )
 
 type Pinger struct {
-	OnRecv func(gps GlobalProbeStats)
+	OnRecv func(ps ProbeStats)
 
 	pingFreqency time.Duration
 	privileged   bool
@@ -162,7 +162,7 @@ func (p *Pinger) Run() {
 			p.mu.Unlock()
 
 			if p.OnRecv != nil {
-				p.OnRecv(p.globalStats)
+				p.OnRecv(stats)
 			}
 		case <-p.closeChan:
 			for _, ch := range p.stoppers {

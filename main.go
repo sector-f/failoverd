@@ -45,10 +45,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	p.OnRecv = func(gps ping.GlobalProbeStats) {
-		ud := &lua.LUserData{
-			Value:     gps,
+	p.OnRecv = func(ps ping.ProbeStats) {
+		globalProbeStatsUD := &lua.LUserData{
+			Value:     p.Stats(),
 			Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
+		}
+
+		probeStatsUD := &lua.LUserData{
+			Value:     &ps,
+			Metatable: luaState.GetTypeMetatable(luaProbeStatsTypeName),
 		}
 
 		if config.OnRecvFunc.Type() != lua.LTNil {
@@ -58,7 +63,8 @@ func main() {
 					NRet:    0,
 					Protect: true,
 				},
-				ud,
+				globalProbeStatsUD,
+				probeStatsUD,
 			)
 
 			if err != nil {

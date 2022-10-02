@@ -29,8 +29,7 @@ probes = {
 }
 
 -- Gets called whenever a response is received
-function on_recv(gps)
-   ps = gps:lowest_loss()
+function on_recv(gps, ps)
    io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
 end
 
@@ -88,6 +87,6 @@ It has the following methods:
 
 The following functions can be specified in the configuration file; they will be called by `failoverd` when indicated. Note that all functions are optional.
 
-* `on_recv(global_probe_stats)` is called whenever a ping response is received from any endpoint
+* `on_recv(global_probe_stats, probe_stats)` is called whenever a ping response is received from any endpoint. `probe_stats` is the statistics corresponding to the probe for which a response was received.
 * `on_update(global_probe_stats)` is called every `update_frequency` seconds
 * `on_quit()` is called when the program exits (due to SIGINT)
