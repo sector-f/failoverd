@@ -46,6 +46,16 @@ function on_quit()
 end
 ```
 
+### Variables
+
+* `ping_frequency`: seconds to wait before sending each packet. Default is `1`. (number)
+* `update_frequency`: seconds to wait before calling on_update function. Default is `1`. (number)
+* `privileged`: use ICMP pings if true, UDP pings if false. Default is `false`. (boolean)
+* `num_seconds`: `failoverd` will keep track of packet loss for this number of seconds. Default is `10`. (number) 
+* `probes`: list of probes to ping (array of `probe` objects)
+
+Note that if `privileged` is `true`, then you will need to give `failoverd` the `CAP_NET_RAW` capability to allow it to send ICMP ping requests, unless you are running it as the superuser.
+
 ### Types
 
 The following types are implemented for use in the configuration file:
