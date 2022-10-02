@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -12,12 +13,18 @@ import (
 )
 
 func main() {
+	configFilename := flag.String("c", "config.lua", "Path to configuration Lua script")
+	flag.Parse()
+
 	luaState := lua.NewState()
 	defer luaState.Close()
 
-	configFilename := "config.lua" // TODO: make configurable
 	registerTypes(luaState)
-	luaState.DoFile(configFilename)
+	err := luaState.DoFile(*configFilename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
+		os.Exit(1)
+	}
 
 	config, err := configFromLua(luaState)
 	if err != nil {
