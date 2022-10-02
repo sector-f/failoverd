@@ -48,7 +48,7 @@ end
 
 ### Types
 
-The following types are implemented for use in the configuration file.
+The following types are implemented for use in the configuration file:
 
 #### probe
 
@@ -73,3 +73,11 @@ It has the following methods:
 * `probe_stats::src()` returns the probe's source address
 * `probe_stats::dst()` returns the probe's destination address
 * `probe_stats::loss()` returns the probe's current packet loss as a number from 0-100 (percent)
+
+### Functions
+
+The following functions can be specified in the configuration file; they will be called by `failoverd` when indicated. Note that all functions are optional.
+
+* `on_recv(global_probe_stats)` is called whenever a ping response is received from any endpoint
+* `on_update(global_probe_stats)` is called every `update_frequency` seconds
+* `on_quit()` is called when the program exits (due to SIGINT)
