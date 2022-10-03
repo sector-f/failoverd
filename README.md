@@ -72,7 +72,7 @@ The `global_probe_stats` type stores information about the statistics of all run
 It has the following methods:
 
 * `global_probe_stats::lowest_loss()` returns the `probe_stats` of the probe with the lowest packet loss
-* `global_probe_stats::get(string)` uses its argument as a destination address/hostname and returns the corresponding `probe_stats`
+* `global_probe_stats::get(string)` uses its argument as a destination address and returns the corresponding `probe_stats`
 
 #### probe_stats
 
