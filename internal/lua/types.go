@@ -130,6 +130,15 @@ func registerProbeType(l *lua.LState) {
 	// l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), nil))
 }
 
+func checkProbe(l *lua.LState) ping.Probe {
+	ud := l.CheckUserData(1)
+	if v, ok := ud.Value.(ping.Probe); ok {
+		return v
+	}
+	l.ArgError(1, "probe expected")
+	return ping.Probe{}
+}
+
 func newProbe(l *lua.LState) int {
 	p := ping.Probe{}
 
@@ -150,4 +159,41 @@ func newProbe(l *lua.LState) int {
 	})
 
 	return 1
+}
+
+func (e *Engine) registerProbePingerCommands(l *lua.LState) {
+	mt := l.GetTypeMetatable(luaProbeTypeName)
+
+	methods := map[string]lua.LGFunction{
+		"add":  e.addProbe,
+		"stop": e.stopProbe,
+	}
+
+	for m, fn := range methods {
+		l.SetField(mt, m, l.NewFunction(fn))
+	}
+}
+
+func (e *Engine) addProbe(l *lua.LState) int {
+	if e.pinger == nil {
+		l.ArgError(1, "pinger has not been initialized yet")
+		return 0
+	}
+
+	probe := checkProbe(l)
+	e.pinger.AddProbe(probe)
+
+	return 0
+}
+
+func (e *Engine) stopProbe(l *lua.LState) int {
+	if e.pinger == nil {
+		l.ArgError(1, "pinger has not been initialized yet")
+		return 0
+	}
+
+	dst := l.CheckString(1)
+	e.pinger.StopProbe(dst)
+
+	return 0
 }

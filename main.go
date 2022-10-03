@@ -35,6 +35,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	luaEngine.SetPinger(p)
+
 	p.OnRecv = func(ps ping.ProbeStats) {
 		err := luaEngine.OnRecv(p.Stats(), ps)
 		if err != nil {

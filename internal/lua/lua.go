@@ -10,7 +10,8 @@ import (
 type Engine struct {
 	Config Config
 
-	state *lua.LState
+	state  *lua.LState
+	pinger *ping.Pinger
 }
 
 func New(configFile string) (*Engine, error) {
@@ -28,7 +29,12 @@ func New(configFile string) (*Engine, error) {
 		return nil, err
 	}
 
-	return &Engine{config, lstate}, nil
+	return &Engine{Config: config, state: lstate}, nil
+}
+
+func (e *Engine) SetPinger(p *ping.Pinger) {
+	e.pinger = p
+	e.registerProbePingerCommands(e.state)
 }
 
 func (e *Engine) OnRecv(gps map[string]ping.ProbeStats, ps ping.ProbeStats) error {
