@@ -6,18 +6,7 @@ type ProbeStats struct {
 	Loss float64
 }
 
-type GlobalProbeStats struct {
-	Stats map[string]ProbeStats
-}
-
-func (gps GlobalProbeStats) Get(dst string) ProbeStats {
-	return gps.Stats[dst]
-}
-
-func (gps *GlobalProbeStats) Remove(dst string) {
-	delete(gps.Stats, dst)
-}
-
+/*
 func (gps GlobalProbeStats) LowestLoss() ProbeStats {
 	var (
 		lowestProbeStats ProbeStats
@@ -38,3 +27,4 @@ func (gps GlobalProbeStats) LowestLoss() ProbeStats {
 
 	return lowestProbeStats
 }
+*/

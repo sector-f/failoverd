@@ -29,19 +29,23 @@ func registerGlobalProbeStatsType(l *lua.LState) {
 	l.SetField(mt, "__index", l.SetFuncs(l.NewTable(), methods))
 }
 
-func checkGlobalProbeStats(l *lua.LState) ping.GlobalProbeStats {
+func checkGlobalProbeStats(l *lua.LState) map[string]ping.ProbeStats {
 	ud := l.CheckUserData(1)
-	if v, ok := ud.Value.(ping.GlobalProbeStats); ok {
+	if v, ok := ud.Value.(map[string]ping.ProbeStats); ok {
 		return v
 	}
 	l.ArgError(1, "global_probe_stats expected")
-	return ping.GlobalProbeStats{}
+	return nil
 }
 
 func globalProbeStatsGet(l *lua.LState) int {
-	p := checkGlobalProbeStats(l)
+	gps := checkGlobalProbeStats(l)
 	dst := l.CheckString(2)
-	stats := p.Get(dst)
+	stats, ok := gps[dst]
+	if !ok {
+		l.ArgError(2, "destination not found")
+		return 0
+	}
 
 	l.Push(&lua.LUserData{
 		Value:     &stats,
@@ -52,11 +56,27 @@ func globalProbeStatsGet(l *lua.LState) int {
 }
 
 func globalProbeStatsLowestLoss(l *lua.LState) int {
-	p := checkGlobalProbeStats(l)
-	lowest := p.LowestLoss()
+	gps := checkGlobalProbeStats(l)
+
+	var (
+		lowestProbeStats ping.ProbeStats
+		first            bool = true
+	)
+
+	for _, stats := range gps {
+		if first {
+			lowestProbeStats = stats
+			first = false
+			continue
+		}
+
+		if stats.Loss < lowestProbeStats.Loss {
+			lowestProbeStats = stats
+		}
+	}
 
 	l.Push(&lua.LUserData{
-		Value:     &lowest,
+		Value:     &lowestProbeStats,
 		Metatable: l.GetTypeMetatable(luaProbeStatsTypeName),
 	})
 

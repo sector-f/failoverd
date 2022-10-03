@@ -19,8 +19,8 @@ type Pinger struct {
 
 	closeChan chan struct{}
 
-	globalStats GlobalProbeStats
-	probes      []Probe
+	probes           []Probe
+	globalProbeStats map[string]ProbeStats
 
 	stopProbeChan chan string
 	stoppers      map[string]chan struct{} // Maps destinations to channels which are used to stop running pings
@@ -63,10 +63,6 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		stoppers[probe.Dst] = make(chan struct{})
 	}
 
-	gps := GlobalProbeStats{
-		Stats: make(map[string]ProbeStats),
-	}
-
 	p := &Pinger{
 		probes: probes,
 
@@ -76,7 +72,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		stoppers:      stoppers,
 		stopWG:        sync.WaitGroup{},
 
-		globalStats: gps,
+		globalProbeStats: make(map[string]ProbeStats),
 
 		statTracker: make(map[string]*rb.RingBuffer),
 		statCh:      make(chan ProbeStats),
@@ -120,8 +116,7 @@ func (p *Pinger) Run() {
 				}
 			}
 			p.probes = append(p.probes[:idx], p.probes[idx+1:]...)
-
-			p.globalStats.Remove(dst)
+			delete(p.globalProbeStats, dst)
 
 			p.mu.Unlock()
 		case msg := <-p.statCh:
@@ -136,7 +131,7 @@ func (p *Pinger) Run() {
 				Loss: statTracker.Average(),
 			}
 
-			p.globalStats.Stats[msg.Dst] = stats
+			p.globalProbeStats[msg.Dst] = stats
 
 			p.mu.Unlock()
 
@@ -153,11 +148,18 @@ func (p *Pinger) Run() {
 	}
 }
 
-func (p *Pinger) Stats() GlobalProbeStats {
+func (p *Pinger) GetProbeStats(dst string) ProbeStats {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.globalStats
+	return p.globalProbeStats[dst]
+}
+
+func (p *Pinger) Stats() map[string]ProbeStats {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.globalProbeStats
 }
 
 func (p *Pinger) Stop() {
