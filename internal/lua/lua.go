@@ -31,17 +31,17 @@ func New(configFile string) (*Engine, error) {
 }
 
 func (e *Engine) OnRecv(gps map[string]ping.ProbeStats, ps ping.ProbeStats) error {
-	globalProbeStatsUD := &lua.LUserData{
-		Value:     gps,
-		Metatable: e.state.GetTypeMetatable(luaGlobalProbeStatsTypeName),
-	}
-
-	probeStatsUD := &lua.LUserData{
-		Value:     &ps,
-		Metatable: e.state.GetTypeMetatable(luaProbeStatsTypeName),
-	}
-
 	if e.Config.OnRecvFunc.Type() != lua.LTNil {
+		globalProbeStatsUD := &lua.LUserData{
+			Value:     gps,
+			Metatable: e.state.GetTypeMetatable(luaGlobalProbeStatsTypeName),
+		}
+
+		probeStatsUD := &lua.LUserData{
+			Value:     &ps,
+			Metatable: e.state.GetTypeMetatable(luaProbeStatsTypeName),
+		}
+
 		err := e.state.CallByParam(
 			lua.P{
 				Fn:      e.Config.OnRecvFunc,
@@ -61,12 +61,12 @@ func (e *Engine) OnRecv(gps map[string]ping.ProbeStats, ps ping.ProbeStats) erro
 }
 
 func (e *Engine) OnUpdate(gps map[string]ping.ProbeStats) error {
-	ud := &lua.LUserData{
-		Value:     gps,
-		Metatable: e.state.GetTypeMetatable(luaGlobalProbeStatsTypeName),
-	}
-
 	if e.Config.OnUpdateFunc.Type() != lua.LTNil {
+		ud := &lua.LUserData{
+			Value:     gps,
+			Metatable: e.state.GetTypeMetatable(luaGlobalProbeStatsTypeName),
+		}
+
 		err := e.state.CallByParam(
 			lua.P{
 				Fn:      e.Config.OnUpdateFunc,
@@ -85,12 +85,12 @@ func (e *Engine) OnUpdate(gps map[string]ping.ProbeStats) error {
 }
 
 func (e *Engine) OnQuit(gps map[string]ping.ProbeStats) error {
-	ud := &lua.LUserData{
-		Value:     gps,
-		Metatable: e.state.GetTypeMetatable(luaGlobalProbeStatsTypeName),
-	}
-
 	if e.Config.OnQuitFunc.Type() != lua.LTNil {
+		ud := &lua.LUserData{
+			Value:     gps,
+			Metatable: e.state.GetTypeMetatable(luaGlobalProbeStatsTypeName),
+		}
+
 		err := e.state.CallByParam(
 			lua.P{
 				Fn:      e.Config.OnQuitFunc,
