@@ -123,7 +123,7 @@ func (p *Pinger) Stop() {
 	p.stopWG.Wait()
 }
 
-func (p *Pinger) AddProbe(probe Probe) error {
+func (p *Pinger) StartProbe(probe Probe) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

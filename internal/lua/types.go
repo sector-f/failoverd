@@ -165,8 +165,8 @@ func (e *Engine) registerProbePingerCommands(l *lua.LState) {
 	mt := l.GetTypeMetatable(luaProbeTypeName)
 
 	methods := map[string]lua.LGFunction{
-		"add":  e.addProbe,
-		"stop": e.stopProbe,
+		"start": e.startProbe,
+		"stop":  e.stopProbe,
 	}
 
 	for m, fn := range methods {
@@ -174,14 +174,14 @@ func (e *Engine) registerProbePingerCommands(l *lua.LState) {
 	}
 }
 
-func (e *Engine) addProbe(l *lua.LState) int {
+func (e *Engine) startProbe(l *lua.LState) int {
 	if e.pinger == nil {
 		l.ArgError(1, "pinger has not been initialized yet")
 		return 0
 	}
 
 	probe := checkProbe(l)
-	e.pinger.AddProbe(probe)
+	e.pinger.StartProbe(probe)
 
 	return 0
 }

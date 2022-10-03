@@ -68,7 +68,7 @@ The `probe` type is used to specify endpoints that should be pinged. It is creat
 
 Additionally, probes can be started/stopped during runtime:
 
-* `probe.add(probe)` starts a new probe
+* `probe.start(probe)` starts a new probe
 * `probe.stop(string)` stops the probe with the destination IP address specified by its argument
 
 #### global_probe_stats
