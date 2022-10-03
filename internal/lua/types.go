@@ -1,4 +1,4 @@
-package main
+package lua
 
 import (
 	"github.com/sector-f/failoverd/internal/ping"

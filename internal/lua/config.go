@@ -1,4 +1,4 @@
-package main
+package lua
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-type config struct {
+type Config struct {
 	PingFrequency   time.Duration
 	UpdateFrequency time.Duration
 	Privileged      bool
@@ -20,8 +20,8 @@ type config struct {
 	OnQuitFunc   lua.LValue
 }
 
-func configFromLua(l *lua.LState) (config, error) {
-	c := config{}
+func configFromLua(l *lua.LState) (Config, error) {
+	c := Config{}
 
 	switch pingFreq := l.GetGlobal("ping_frequency").(type) {
 	case lua.LNumber:

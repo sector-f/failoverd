@@ -8,34 +8,24 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/sector-f/failoverd/internal/lua"
 	"github.com/sector-f/failoverd/internal/ping"
-	lua "github.com/yuin/gopher-lua"
 )
 
 func main() {
 	configFilename := flag.String("c", "config.lua", "Path to configuration Lua script")
 	flag.Parse()
 
-	luaState := lua.NewState()
-	defer luaState.Close()
-
-	registerTypes(luaState)
-	err := luaState.DoFile(*configFilename)
+	luaEngine, err := lua.New(*configFilename)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	defer luaEngine.Close()
 
-	config, err := configFromLua(luaState)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading config: %v\n", err)
-		os.Exit(1)
-	}
-
-	probes := config.Probes
-
+	config := luaEngine.Config
 	p, err := ping.NewPinger(
-		probes,
+		config.Probes,
 		ping.WithPingFrequency(config.PingFrequency),
 		ping.WithNumSeconds(config.NumSeconds),
 		ping.WithPrivileged(config.Privileged),
@@ -46,30 +36,9 @@ func main() {
 	}
 
 	p.OnRecv = func(ps ping.ProbeStats) {
-		globalProbeStatsUD := &lua.LUserData{
-			Value:     p.Stats(),
-			Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
-		}
-
-		probeStatsUD := &lua.LUserData{
-			Value:     &ps,
-			Metatable: luaState.GetTypeMetatable(luaProbeStatsTypeName),
-		}
-
-		if config.OnRecvFunc.Type() != lua.LTNil {
-			err := luaState.CallByParam(
-				lua.P{
-					Fn:      config.OnRecvFunc,
-					NRet:    0,
-					Protect: true,
-				},
-				globalProbeStatsUD,
-				probeStatsUD,
-			)
-
-			if err != nil {
-				log.Printf("Error calling on_recv function: %v\n", err)
-			}
+		err := luaEngine.OnRecv(p.Stats(), ps)
+		if err != nil {
+			log.Println(err)
 		}
 	}
 
@@ -82,48 +51,14 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			stats := p.Stats()
-
-			ud := &lua.LUserData{
-				Value:     stats,
-				Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
-			}
-
-			if config.OnUpdateFunc.Type() != lua.LTNil {
-				err := luaState.CallByParam(
-					lua.P{
-						Fn:      config.OnUpdateFunc, // I suppose this name could be hardcoded in?
-						NRet:    0,
-						Protect: true,
-					},
-					ud,
-				)
-
-				if err != nil {
-					log.Printf("Error calling on_update function: %v\n", err)
-				}
+			err := luaEngine.OnUpdate(p.Stats())
+			if err != nil {
+				log.Println(err)
 			}
 		case <-sigChan:
-			if config.OnQuitFunc.Type() != lua.LTNil {
-				stats := p.Stats()
-
-				ud := &lua.LUserData{
-					Value:     stats,
-					Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
-				}
-
-				err := luaState.CallByParam(
-					lua.P{
-						Fn:      config.OnQuitFunc,
-						NRet:    0,
-						Protect: true,
-					},
-					ud,
-				)
-
-				if err != nil {
-					log.Printf("Error calling on_quit function: %v\n", err)
-				}
+			err := luaEngine.OnQuit(p.Stats())
+			if err != nil {
+				log.Println(err)
 			}
 
 			p.Stop()
