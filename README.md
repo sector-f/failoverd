@@ -66,6 +66,11 @@ The `probe` type is used to specify endpoints that should be pinged. It is creat
 * `probe.new(string)` creates a probe where the argument to `new()` is the destination IP address to ping
 *  `probe.new(string, string)` creates a probe where the first argument to `new()` is the destination IP address to ping and the second argument is either the source IP address or the network interface whose IP address hould be used as the source
 
+Additionally, probes can be started/stopped during runtime:
+
+* `probe.add(probe)` starts a new probe
+* `probe.stop(string)` stops the probe with the destination IP address specified by its argument
+
 #### global_probe_stats
 
 The `global_probe_stats` type stores information about the statistics of all running probes.
