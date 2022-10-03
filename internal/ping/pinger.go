@@ -21,23 +21,25 @@ type Pinger struct {
 
 	globalStats GlobalProbeStats
 	probes      []Probe
-	resolveMap  map[string]string // Maps client-specified destinations to resolved destinations
 
 	stopProbeChan chan string
-	stoppers      map[string]chan struct{} // Maps resolved destinations to channels which are used to stop running pings
+	stoppers      map[string]chan struct{} // Maps destinations to channels which are used to stop running pings
 	stopWG        sync.WaitGroup
 
-	statTracker map[string]*rb.RingBuffer // Maps resolved destination address to ring buffer
+	statTracker map[string]*rb.RingBuffer // Maps destination addresses to ring buffers
 	statCh      chan ProbeStats
 	mu          sync.Mutex
 }
 
 func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
-	resolvedProbes := make([]Probe, 0, len(probes))
-	resolveMap := make(map[string]string)
-	stoppers := make(map[string]chan struct{})
+	stoppers := make(map[string]chan struct{}, len(probes))
 
-	for _, probe := range probes {
+	for i, probe := range probes {
+		// Verify destination is valid IP address
+		if net.ParseIP(probe.Dst) == nil {
+			return nil, fmt.Errorf("%s is not a valid IP address", probe.Dst)
+		}
+
 		// If specified source is not an address, treat it as a network interface name
 		// and attempt to determine its address using netlink.
 		if probe.Src != "" && net.ParseIP(probe.Src) == nil {
@@ -55,35 +57,20 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 				return nil, fmt.Errorf("interface has no addresses")
 			}
 
-			probe.Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
+			probes[i].Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
 		}
 
-		addrs, err := net.LookupHost(probe.Dst)
-		if err != nil {
-			return nil, fmt.Errorf("could not resolve %s: %w", probe.Dst, err)
-		}
-
-		if len(addrs) == 0 {
-			return nil, fmt.Errorf("no addresses returned for %s", probe.Dst)
-		}
-
-		resolvedProbes = append(resolvedProbes, Probe{Src: probe.Src, Dst: addrs[0]})
-		stoppers[addrs[0]] = make(chan struct{})
-		resolveMap[probe.Dst] = addrs[0]
+		stoppers[probe.Dst] = make(chan struct{})
 	}
 
 	gps := GlobalProbeStats{
 		Stats: make(map[string]ProbeStats),
-
-		probes:     resolvedProbes,
-		resolveMap: resolveMap,
 	}
 
 	p := &Pinger{
-		probes: resolvedProbes,
+		probes: probes,
 
-		closeChan:  make(chan struct{}),
-		resolveMap: resolveMap,
+		closeChan: make(chan struct{}),
 
 		stopProbeChan: make(chan string),
 		stoppers:      stoppers,
@@ -118,24 +105,16 @@ func (p *Pinger) Run() {
 		case dst := <-p.stopProbeChan:
 			p.mu.Lock()
 
-			resolvedAddr, ok := p.resolveMap[dst]
+			stopper, ok := p.stoppers[dst]
 			if !ok {
 				break
 			}
-
-			stopper, ok := p.stoppers[resolvedAddr]
-			if !ok {
-				break
-			}
-
 			stopper <- struct{}{}
-
-			delete(p.resolveMap, dst)
-			delete(p.stoppers, resolvedAddr)
+			delete(p.stoppers, dst)
 
 			idx := 0
 			for i, probe := range p.probes {
-				if resolvedAddr == probe.Dst {
+				if dst == probe.Dst {
 					idx = i
 					break
 				}
