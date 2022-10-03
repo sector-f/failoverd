@@ -19,6 +19,6 @@ function on_update(gps)
     io.write(string.format("%s: %.2f\n", ps:dst(), ps:loss()))
 end
 
-function on_quit()
+function on_quit(gps)
     print("Shutting down")
 end

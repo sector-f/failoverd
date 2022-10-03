@@ -105,12 +105,20 @@ func main() {
 			}
 		case <-sigChan:
 			if config.OnQuitFunc.Type() != lua.LTNil {
+				stats := p.Stats()
+
+				ud := &lua.LUserData{
+					Value:     stats,
+					Metatable: luaState.GetTypeMetatable(luaGlobalProbeStatsTypeName),
+				}
+
 				err := luaState.CallByParam(
 					lua.P{
 						Fn:      config.OnQuitFunc,
 						NRet:    0,
 						Protect: true,
 					},
+					ud,
 				)
 
 				if err != nil {

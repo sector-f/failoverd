@@ -40,7 +40,7 @@ function on_update(gps)
 end
 
 -- Gets called on program shutdown (SIGINT)
-function on_quit()
+function on_quit(gps)
     print("Shutting down")
 end
 ```
@@ -89,4 +89,4 @@ The following functions can be specified in the configuration file; they will be
 
 * `on_recv(global_probe_stats, probe_stats)` is called whenever a ping response is received from any endpoint. `probe_stats` is the statistics corresponding to the probe for which a response was received.
 * `on_update(global_probe_stats)` is called every `update_frequency` seconds
-* `on_quit()` is called when the program exits (due to SIGINT)
+* `on_quit(global_probe_stats)` is called when the program exits (due to SIGINT)
