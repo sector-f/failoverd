@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -19,10 +20,8 @@ type Pinger struct {
 	probes           []Probe
 	globalProbeStats map[string]ProbeStats
 
-	createProbeChan chan Probe
-	stopProbeChan   chan string
-	stoppers        map[string]chan struct{} // Maps destinations to channels which are used to stop running pings
-	stopWG          sync.WaitGroup
+	stoppers map[string]chan struct{} // Maps destinations to channels which are used to stop running pings
+	stopWG   sync.WaitGroup
 
 	statTracker map[string]*rb.RingBuffer // Maps destination addresses to ring buffers
 	statCh      chan ProbeStats
@@ -47,10 +46,8 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 
 		closeChan: make(chan struct{}),
 
-		createProbeChan: make(chan Probe),
-		stopProbeChan:   make(chan string),
-		stoppers:        stoppers,
-		stopWG:          sync.WaitGroup{},
+		stoppers: stoppers,
+		stopWG:   sync.WaitGroup{},
 
 		globalProbeStats: make(map[string]ProbeStats),
 
@@ -78,38 +75,6 @@ func (p *Pinger) Run() {
 
 	for {
 		select {
-		case probe := <-p.createProbeChan:
-			p.mu.Lock()
-
-			stopper := make(chan struct{})
-			p.probes = append(p.probes, probe)
-			p.stoppers[probe.Dst] = stopper
-			p.statTracker[probe.Dst] = rb.New(p.numSeconds)
-			go probe.run(p.pingFreqency, p.privileged, p.statCh, stopper, &p.stopWG)
-
-			p.mu.Unlock()
-		case dst := <-p.stopProbeChan:
-			p.mu.Lock()
-
-			stopper, ok := p.stoppers[dst]
-			if !ok {
-				break
-			}
-			stopper <- struct{}{}
-			delete(p.stoppers, dst)
-
-			idx := 0
-			for i, probe := range p.probes {
-				if dst == probe.Dst {
-					idx = i
-					break
-				}
-			}
-			p.probes = append(p.probes[:idx], p.probes[idx+1:]...)
-			delete(p.globalProbeStats, dst)
-			delete(p.statTracker, dst)
-
-			p.mu.Unlock()
 		case msg := <-p.statCh:
 			p.mu.Lock()
 
@@ -159,17 +124,46 @@ func (p *Pinger) Stop() {
 }
 
 func (p *Pinger) AddProbe(probe Probe) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	validated, err := newProbe(probe)
 	if err != nil {
 		return err
 	}
 
-	p.createProbeChan <- validated
+	stopper := make(chan struct{})
+	p.probes = append(p.probes, validated)
+	p.stoppers[validated.Dst] = stopper
+	p.statTracker[validated.Dst] = rb.New(p.numSeconds)
+	go validated.run(p.pingFreqency, p.privileged, p.statCh, stopper, &p.stopWG)
+
 	return nil
 }
 
-func (p *Pinger) StopProbe(dst string) {
-	p.stopProbeChan <- dst
+func (p *Pinger) StopProbe(dst string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	stopper, ok := p.stoppers[dst]
+	if !ok {
+		return fmt.Errorf("probe does not exist")
+	}
+	stopper <- struct{}{}
+	delete(p.stoppers, dst)
+
+	idx := 0
+	for i, probe := range p.probes {
+		if dst == probe.Dst {
+			idx = i
+			break
+		}
+	}
+	p.probes = append(p.probes[:idx], p.probes[idx+1:]...)
+	delete(p.globalProbeStats, dst)
+	delete(p.statTracker, dst)
+
+	return nil
 }
 
 type Option func(p *Pinger)
