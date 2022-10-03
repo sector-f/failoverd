@@ -1,13 +1,10 @@
 package ping
 
 import (
-	"fmt"
-	"net"
 	"sync"
 	"time"
 
 	rb "github.com/sector-f/failoverd/internal/ringbuffer"
-	"github.com/vishvananda/netlink"
 )
 
 type Pinger struct {
@@ -35,31 +32,12 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 	stoppers := make(map[string]chan struct{}, len(probes))
 
 	for i, probe := range probes {
-		// Verify destination is valid IP address
-		if net.ParseIP(probe.Dst) == nil {
-			return nil, fmt.Errorf("%s is not a valid IP address", probe.Dst)
+		validatedProbe, err := newProbe(probe)
+		if err != nil {
+			return nil, err
 		}
 
-		// If specified source is not an address, treat it as a network interface name
-		// and attempt to determine its address using netlink.
-		if probe.Src != "" && net.ParseIP(probe.Src) == nil {
-			link, err := netlink.LinkByName(probe.Src)
-			if err != nil {
-				return nil, fmt.Errorf("could not determine address of %s: %w", probe.Src, err)
-			}
-
-			addrs, err := netlink.AddrList(link, netlink.FAMILY_V4) // TODO: Handle IPv6?
-			if err != nil {
-				return nil, fmt.Errorf("could not determine address of %s: %w", probe.Src, err)
-			}
-
-			if len(addrs) == 0 {
-				return nil, fmt.Errorf("interface has no addresses")
-			}
-
-			probes[i].Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
-		}
-
+		probes[i] = validatedProbe
 		stoppers[probe.Dst] = make(chan struct{})
 	}
 

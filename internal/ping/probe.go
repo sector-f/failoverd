@@ -2,16 +2,51 @@ package ping
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net"
 	"sync"
 	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
+	"github.com/vishvananda/netlink"
 )
 
 type Probe struct {
 	Src string
 	Dst string
+}
+
+// newProbe takes in a Probe and validates its addresses
+func newProbe(probe Probe) (Probe, error) {
+	// Verify destination is valid IP address
+	if net.ParseIP(probe.Dst) == nil {
+		return Probe{}, fmt.Errorf("%s is not a valid IP address", probe.Dst)
+	}
+
+	validated := probe
+
+	// If specified source is not an address, treat it as a network interface name
+	// and attempt to determine its address using netlink.
+	if probe.Src != "" && net.ParseIP(probe.Src) == nil {
+		link, err := netlink.LinkByName(probe.Src)
+		if err != nil {
+			return Probe{}, fmt.Errorf("could not determine address of %s: %w", probe.Src, err)
+		}
+
+		addrs, err := netlink.AddrList(link, netlink.FAMILY_V4) // TODO: Handle IPv6?
+		if err != nil {
+			return Probe{}, fmt.Errorf("could not determine address of %s: %w", probe.Src, err)
+		}
+
+		if len(addrs) == 0 {
+			return Probe{}, fmt.Errorf("interface has no addresses")
+		}
+
+		validated.Src = addrs[0].IP.String() // TODO: figure out if there's a better way to pick an address than just "use the first one"
+	}
+
+	return validated, nil
 }
 
 func (probe *Probe) run(pingFrequency time.Duration, privileged bool, statCh chan ProbeStats, stopChan chan struct{}, wg *sync.WaitGroup) {
