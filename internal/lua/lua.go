@@ -16,7 +16,7 @@ type Engine struct {
 func New(configFile string) (*Engine, error) {
 	lstate := lua.NewState()
 	registerTypes(lstate)
-	lstate.PreloadModule("dns", newDNSModule)
+	lstate.PreloadModule("dns", (&dnsModule{}).loader)
 
 	err := lstate.DoFile(configFile)
 	if err != nil {
