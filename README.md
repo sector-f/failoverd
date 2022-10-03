@@ -94,3 +94,27 @@ The following functions can be specified in the configuration file; they will be
 * `on_recv(global_probe_stats, probe_stats)` is called whenever a ping response is received from any endpoint. `probe_stats` is the statistics corresponding to the probe for which a response was received.
 * `on_update(global_probe_stats)` is called every `update_frequency` seconds
 * `on_quit(global_probe_stats)` is called when the program exits (due to SIGINT)
+
+### Modules
+
+The following modules are provided:
+
+#### dns
+
+The `dns` module allows for DNS lookups using the system DNS resolver. It provides the following functions:
+
+* `lookup_v4(string)` looks up the IPv4 addresses for its argument and returns the addresses as an array
+* `lookup_v6(string)` looks up the IPv6 addresses for its argument and returns the addresses as an array
+* `lookup(string)` looks up the IPv4 and IPv6 records for its argument and returns the addresses as an array
+* `set_timeout(number)` sets the timeout duration for the DNS resolver, in milliseconds 
+
+##### Example
+
+```lua
+local dns = require("dns")
+
+addresses = dns.lookup_v4("google.com")
+for i,addr in ipairs(addresses) do
+    table.insert(probes, probe.new(addr))
+end
+```
