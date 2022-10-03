@@ -29,12 +29,18 @@ func New(configFile string) (*Engine, error) {
 		return nil, err
 	}
 
-	return &Engine{Config: config, state: lstate}, nil
+	e := &Engine{
+		Config: config,
+		state:  lstate,
+	}
+
+	e.registerProbePingerCommands(lstate)
+
+	return e, nil
 }
 
 func (e *Engine) SetPinger(p *ping.Pinger) {
 	e.pinger = p
-	e.registerProbePingerCommands(e.state)
 }
 
 func (e *Engine) OnRecv(gps map[string]ping.ProbeStats, ps ping.ProbeStats) error {
