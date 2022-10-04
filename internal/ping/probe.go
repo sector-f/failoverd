@@ -99,23 +99,45 @@ func (probe *Probe) run(pingFrequency time.Duration, privileged bool, statCh cha
 			//   * Stop() is called, so we want to abandon the running ping
 			select {
 			case stats := <-finishedChan:
-				statCh <- ProbeStats{
+				ps := ProbeStats{
 					Src:  probe.Src,
 					Dst:  probe.Dst,
 					Loss: stats.PacketLoss,
 				}
+
+				select {
+				case statCh <- ps:
+				case <-stopChan:
+					cancelFunc()
+					return
+				}
 			case <-ctx.Done():
 				// Timed out
 				pinger.Stop()
-				statCh <- ProbeStats{
+				ps := ProbeStats{
 					Src:  probe.Src,
 					Dst:  probe.Dst,
 					Loss: 100.0, // We're only sending one ping at a time, so a timeout means 100% packet loss
+				}
+
+				select {
+				case statCh <- ps:
+				case <-stopChan:
+					cancelFunc()
+					return
 				}
 			case <-stopChan:
 				pinger.Stop()
 				cancelFunc()
 				return
+			}
+
+			select {
+			case <-stopChan:
+				cancelFunc()
+				return
+			default:
+				// Continue
 			}
 
 			<-ctx.Done()
