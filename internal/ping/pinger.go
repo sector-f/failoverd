@@ -127,6 +127,7 @@ func (p *Pinger) Stats() map[string]ProbeStats {
 func (p *Pinger) Stop() {
 	p.closeChan <- struct{}{}
 	p.stopWG.Wait()
+	close(p.statCh)
 }
 
 func (p *Pinger) StartProbe(probe Probe) error {

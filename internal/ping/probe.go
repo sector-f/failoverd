@@ -110,6 +110,9 @@ func (probe *Probe) run(pingFrequency time.Duration, privileged bool, statCh cha
 				Loss: 100.0, // We're only sending one ping at a time, so a timeout means 100% packet loss
 			}
 			statCh <- ps
+		case <-stopChan:
+			cancelFunc()
+			return
 		}
 
 		select {
