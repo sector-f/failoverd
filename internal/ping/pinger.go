@@ -38,7 +38,7 @@ func NewPinger(probes []Probe, options ...Option) (*Pinger, error) {
 		}
 
 		probes[i] = validatedProbe
-		stoppers[probe.Dst] = make(chan struct{})
+		stoppers[probe.Dst] = make(chan struct{}, 1)
 	}
 
 	p := &Pinger{
@@ -99,6 +99,12 @@ func (p *Pinger) Run() {
 				ch <- struct{}{}
 			}
 
+			go func() {
+				for i := 0; i < len(p.probes); i++ {
+					<-p.statCh
+				}
+			}()
+
 			return
 		}
 	}
@@ -132,7 +138,7 @@ func (p *Pinger) StartProbe(probe Probe) error {
 		return err
 	}
 
-	stopper := make(chan struct{})
+	stopper := make(chan struct{}, 1)
 	p.probes = append(p.probes, validated)
 	p.stoppers[validated.Dst] = stopper
 	p.statTracker[validated.Dst] = rb.New(p.numSeconds)
