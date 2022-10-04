@@ -15,9 +15,9 @@ type Config struct {
 	NumSeconds      uint
 	Probes          []ping.Probe
 
-	OnRecvFunc   lua.LValue
-	OnUpdateFunc lua.LValue
-	OnQuitFunc   lua.LValue
+	onRecvFunc   lua.LValue
+	onUpdateFunc lua.LValue
+	onQuitFunc   lua.LValue
 }
 
 func configFromLua(l *lua.LState) (Config, error) {
@@ -82,21 +82,21 @@ func configFromLua(l *lua.LState) (Config, error) {
 
 	switch onRecvFunc := l.GetGlobal("on_recv").(type) {
 	case *lua.LFunction, *lua.LNilType:
-		c.OnRecvFunc = onRecvFunc
+		c.onRecvFunc = onRecvFunc
 	default:
 		return c, fmt.Errorf("`on_recv` must be a function, not a %s", onRecvFunc.Type())
 	}
 
 	switch onUpdateFunc := l.GetGlobal("on_update").(type) {
 	case *lua.LFunction, *lua.LNilType:
-		c.OnUpdateFunc = onUpdateFunc
+		c.onUpdateFunc = onUpdateFunc
 	default:
 		return c, fmt.Errorf("`on_update` must be a function, not a %s", onUpdateFunc.Type())
 	}
 
 	switch onQuitFunc := l.GetGlobal("on_quit").(type) {
 	case *lua.LFunction, *lua.LNilType:
-		c.OnQuitFunc = onQuitFunc
+		c.onQuitFunc = onQuitFunc
 	default:
 		return c, fmt.Errorf("`on_quit` must be a function, not a %s", onQuitFunc.Type())
 	}
